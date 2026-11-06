@@ -148,6 +148,12 @@ Reading a DXF into a model and writing the model back out loses whatever the mod
 
 It costs memory, about the size of the file, and it means two descriptions of each object that have to be told apart. In exchange, "we didn't damage your file" becomes something a test can check exactly, on any file, including damaged ones and ones from programs we've never heard of. *Challenged and kept:* parsing unknown things into generic tag lists, as ezdxf does, handles more editing of them but reformats numbers and reorders tags, so a file nobody changed would still come back different.
 
+### ADR-12: An offset is made exact first, and its corners are made sharp afterwards
+
+A polyline's offset is each piece moved over, with every corner on the outside rounded round the vertex. Then each piece keeps exactly the parts that are at least the distance from the whole of the original. That's decided by measuring against the pieces near it, nearest first, cutting it wherever it meets something that's exactly the distance from one of them and testing between the cuts, so it holds even where the path crosses itself, comes back to the same point or has arcs so flat they're nearly lines. Only after that do straight sides carry on to meet in sharp corners, and only where the corner they make stays far enough away, which carrying on mostly does, because it moves away from the corner it goes round.
+
+*Challenged:* making the sharp corners first, as most programs do, and then removing the loops this makes. That's simpler to write, but a corner carried on into the wrong place is then hard to tell from a loop, and a stretch closer than the distance was left behind in random tests. Here random tests check, at many points along every piece, that nothing is closer than the distance and that nothing far enough is missing.
+
 ## What's measured, and what it should stay under
 
 `tools/bench.py` reports these, and CI runs a quick version. They're from this development machine, not a promise about yours.
@@ -161,6 +167,7 @@ It costs memory, about the size of the file, and it means two descriptions of ea
 | Read a DXF of the same | under 5 s (measured 2.8 s, 21 MB) |
 | Write a DXF of the same | under 5 s (measured 0.8 s, or 0.3 s for one that hasn't changed) |
 | A mouse move, with what it paints | under 16 ms (measured 1 ms, offscreen) |
+| Offset a polyline of 10,000 pieces | measured 3.4 s round a ring, 1.8 s along a fine zigzag; an offset that's being previewed gives up after 0.15 s |
 | A pan with everything in view | under 50 ms (measured 30 ms) |
 | Repaint zoomed in | measured 13 ms |
 | First paint after opening | measured 235 ms |

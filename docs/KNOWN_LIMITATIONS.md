@@ -4,7 +4,16 @@ DraftWorx is deliberately small. A simple result mustn't look like an exact one,
 
 ## Not there yet
 
-This is early. You can draw lines, polylines, rectangles, circles, arcs, ellipses, points and text, select them, drag their handles, and move, copy, rotate, scale, mirror and erase them, and open and save DXF as well as `.draftworx`. Nothing else yet: no trim, offset, dimensions, hatch, block creation or printing. See `ROADMAP.md`.
+This is early. You can draw lines, polylines, rectangles, circles, arcs, ellipses, points and text, select them, drag their handles, move, copy, rotate, scale, mirror and erase them, trim, extend, offset, fillet, chamfer, array, break, join, explode and stretch them, match one's look to another's, and open and save DXF as well as `.draftworx`. Nothing else yet: no dimensions, hatch, block creation or printing. See `ROADMAP.md`.
+
+## Changing things
+
+- **Trim and extend** have no cutting edges to choose: everything visible cuts, including what's inside blocks and what came from a DXF and can't be changed here. Those cut but can't be trimmed themselves. A circle needs two cuts to open; with one, all of it goes.
+- **Offset** of a polyline is exact. Its straight sides carry on until they meet, as you'd draw it by hand, unless that's more than ten times the distance, would come closer to the original than the distance, or would cross another corner made like that. Then the corner is rounded, exactly the distance from it. A corner next to an arc is rounded too. Where the polyline crosses or touches itself, what's left is everything at least the distance from all of it.
+- **Offset** of an ellipse or a spline isn't an ellipse or a spline, so it's a spline fitted to the true offset, and the program says how closely.
+- While the pointer moves, an offset that takes more than a moment to work out, as one of a polyline with thousands of pieces can, isn't previewed. Clicking still makes it.
+- **Fillet** works on lines, arcs and circles and the corners of a polyline. **Chamfer** works on straight lines and a polyline's straight corners. Two different polylines can't be filleted together.
+- **Join** joins lines, arcs and open polylines that meet end to end. Ellipses and splines aren't joined.
 
 ## DXF
 
@@ -27,6 +36,7 @@ What's kept, what's shown and what isn't are in `DXF.md`. The short version: not
 ## Accuracy
 
 - Coordinates are IEEE doubles. Two points closer than a billionth of a unit (or a trillionth of their size, for large coordinates) count as the same.
+- A polyline piece whose bulge is under a hundred-millionth counts as straight. It's that far from straight at most a hundred-millionth of its length.
 - Where curves touch without crossing (tangency) and neither is a line or circle, the contact point is found numerically, to about a millionth of the curves' size.
 - Text extents use a fixed table of Helvetica's widths, so they can differ a little from what's drawn, and from another program's fonts.
 - NURBS and splines above degree 3 draw as curves matched to a hundred-thousandth of their size. Polynomial cubic splines draw exactly.

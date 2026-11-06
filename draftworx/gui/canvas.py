@@ -356,16 +356,17 @@ class Canvas(QWidget):
 
     def _paint_ghosts(self, p: QPainter) -> None:
         s = self.session
-        if not s.ghosts:
+        if not s.ghosts and not s.doomed:
             return
         p.setTransform(self._world_transform())
-        pen = QPen(QColor(self.theme.canvas["ghost"]))
-        pen.setCosmetic(True)
-        pen.setWidthF(1.5)
-        p.setPen(pen)
         p.setBrush(Qt.BrushStyle.NoBrush)
-        for shape in s.ghosts:
-            p.drawPath(self.scene.shape_path(shape))
+        for shapes, token, width in ((s.doomed, "remove", 2.5), (s.ghosts, "ghost", 1.5)):
+            pen = QPen(QColor(self.theme.canvas[token]))
+            pen.setCosmetic(True)
+            pen.setWidthF(width)
+            p.setPen(pen)
+            for shape in shapes:
+                p.drawPath(self.scene.shape_path(shape))
         p.resetTransform()
 
     def _paint_grips(self, p: QPainter) -> None:

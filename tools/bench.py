@@ -20,6 +20,7 @@ from draftworx.core.curves import Arc, Circle, Line, Polyline  # noqa: E402
 from draftworx.core.dxf import read_dxf, write_dxf  # noqa: E402
 from draftworx.core.model import Document  # noqa: E402
 from draftworx.core.native import dumps, loads  # noqa: E402
+from draftworx.core.ops.offset import offset  # noqa: E402
 from draftworx.core.snap import SnapEngine, SnapQuery  # noqa: E402
 from draftworx.core.vec import Vec  # noqa: E402
 
@@ -150,6 +151,14 @@ def main() -> int:
             doc.undo()
     t, _ = timed(undo_all)
     results.append(("one edit and its undo", t / 1000, 0.01))
+
+    m = n // 10
+    ring = Polyline(tuple(Vec(100.0 * math.cos(math.tau * i / m), 100.0 * math.sin(math.tau * i / m)) for i in range(m)), closed=True)
+    t, _ = timed(lambda: offset(ring, 10.0, Vec(500.0, 0.0)))
+    results.append((f"offset a ring of {m} pieces outward", t, 20.0 * k))
+    zigzag = Polyline(tuple(Vec(i * 0.02, 0.1 * (i % 2)) for i in range(m)))
+    t, _ = timed(lambda: offset(zigzag, 10.0, Vec(0.0, 50.0)))
+    results.append((f"offset a fine zigzag of {m}, well clear", t, 20.0 * k))
 
     results.extend(window_times(doc, k))
 
