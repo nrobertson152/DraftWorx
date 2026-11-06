@@ -53,6 +53,51 @@ def timed(fn):
     return time.perf_counter() - start, result
 
 
+def window_times(doc: Document, k: float) -> list[tuple[str, float, float]]:
+    """What a person feels: repainting the whole drawing, and a mouse move. Offscreen, so a real screen adds its own time."""
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from draftworx.core.config import Config
+    from draftworx.core.session import Session
+    from draftworx.gui.canvas import Canvas
+    from draftworx.gui.theme import resolve
+    app = QApplication.instance() or QApplication(["bench"])
+    theme = resolve("modern_light")
+    session = Session(doc)
+    canvas = Canvas(session, theme, Config())
+    canvas.resize(1600, 1000)
+    canvas.show()
+    app.processEvents()
+    out = []
+    canvas.view.fit(doc.extents())
+    canvas.scene.rebuild()
+
+    def first():
+        canvas._render()
+    t, _ = timed(first)
+    out.append(("first paint, everything in view", t, 20.0 * k + 1.0))
+    t, _ = timed(lambda: canvas._render())
+    out.append(("repaint, everything in view (a pan)", t, 2.0 * k + 0.2))
+    canvas.view.zoom_at(800, 500, 30.0)
+    t, _ = timed(lambda: canvas._render())
+    out.append(("repaint, zoomed in", t, 0.5 * k + 0.1))
+    session.run("LINE")
+    r = random.Random(3)
+    moves = [(r.random() * 100_000.0, r.random() * 100_000.0) for _ in range(200)]
+
+    def move_all():
+        for x, y in moves:
+            session.move(x, y, canvas.view.px, 0.0)
+            canvas.grab()
+    t, _ = timed(move_all)
+    out.append(("a mouse move, with what it paints", t / len(moves), 0.05 * k + 0.02))
+    session.cancel()
+    canvas.close()
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--quick", action="store_true")
@@ -98,6 +143,8 @@ def main() -> int:
             doc.undo()
     t, _ = timed(undo_all)
     results.append(("one edit and its undo", t / 1000, 0.01))
+
+    results.extend(window_times(doc, k))
 
     failed = False
     print(f"{n} objects")
