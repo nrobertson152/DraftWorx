@@ -23,7 +23,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "hypothesis", "ezdxf", "pillow", "pyflakes", "pypdf", "pypdfium2", "resvg-py"]
+dev = ["pytest", "hypothesis", "ezdxf", "pillow", "pyflakes", "pypdf", "pypdfium2", "resvg-py", "pyinstaller"]   # pyinstaller: tools/package.py
 
 [project.urls]
 "Support development" = "https://ko-fi.com/nr270343"

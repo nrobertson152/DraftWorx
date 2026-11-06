@@ -102,8 +102,15 @@ What's kept, what's shown and what isn't are in `DXF.md`. The short version: not
 - Text extents use a fixed table of Helvetica's widths, so they can differ a little from what's drawn, and from another program's fonts.
 - NURBS and splines above degree 3 draw as curves matched to a hundred-thousandth of their size. Polynomial cubic splines draw exactly.
 
+## Standalone builds
+
+- They aren't signed, so Windows may say it protected your PC the first time one runs: *More info*, then *Run anyway*.
+- The Linux build is made on Ubuntu 22.04 and brings the libraries it uses with it, so it needs a Linux at least that new.
+- They're builds to try, kept for 30 days on each run's page. They aren't releases.
+
 ## Not verified
 
 - How it feels. It's only been driven by tests and looked at in screenshots. Nobody has drawn with it by hand, on Windows or Linux.
-- Native Windows use by hand. CI runs on Windows, offscreen.
+- Native Windows use by hand. CI runs on Windows, offscreen. The Windows build's self-test runs there too, window included.
+- The Linux build on other distributions than Ubuntu.
 - AutoCAD reading files written here: it can't be run in CI. ezdxf, GDAL and LibreCAD do read them.

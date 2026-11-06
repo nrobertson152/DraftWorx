@@ -1,0 +1,61 @@
+name: Build packages
+
+# A standalone DraftWorx for Windows and Linux, to download from the run's page and try: unpack it and run draftworx-gui. Nothing to
+# install, not even Python. tools/package.py builds it, checks the built program and packs it. These are builds to try, not
+# releases: releases and version tags are the Director's (AGENTS.md), so nothing here publishes one.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md', 'docs/**']
+  pull_request:
+    paths: ['tools/package*', '.github/workflows/packages.yml', 'pyproject.toml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: packages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: ${{ matrix.system }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - system: Windows
+            os: windows-latest
+          - system: Linux
+            os: ubuntu-22.04      # an older Ubuntu, because a Linux build runs on systems as new as the one it's built on, or newer
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}      # a pull request's own commit, not a merge of it
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install Qt's system libraries (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libegl1 libgl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0
+      - name: Install DraftWorx and PyInstaller
+        run: python -m pip install -e ".[dev]"
+      - name: Build, check and pack
+        id: package
+        run: python tools/package.py
+      - name: Keep the package
+        uses: actions/upload-artifact@v7
+        with:
+          path: ${{ steps.package.outputs.archive }}
+          archive: false
+          if-no-files-found: error
+          retention-days: 30

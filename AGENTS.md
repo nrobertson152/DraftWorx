@@ -44,6 +44,7 @@ python -m compileall -q draftworx tests
 QT_QPA_PLATFORM=offscreen python -m pytest -q -ra
 python -m draftworx --self-test
 python tools/bench.py                        # measured speed; see docs/ARCHITECTURE.md for what it should stay under
+python tools/package.py                      # a standalone build for this system in dist/, checked and packed as CI makes it
 ```
 
 Property tests are derandomized, so CI is repeatable. A failure is real.
