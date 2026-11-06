@@ -25,6 +25,8 @@ draftworx/
     dxf/                        reading and writing DXF, keeping what isn't understood
     snap                        the snap and tracking engine
     session, commands/          commands as coroutines, selection, typed input
+    select, grips, info, layers what's under the cursor, handles, live measurements
+    config, recovery, files     settings, unsaved work, opening and saving
     ops/                        trim, extend, offset, fillet, cleanup and the like
     dim, hatch, display         what dimensions and hatches draw
   gui/             PySide6. Thin: it forwards events and paints what the core says.
@@ -131,7 +133,11 @@ Other programs are reached the way the family already does it: `revisionworx lin
 QGraphicsView costs a Python object per item, and its hit-testing and selection would duplicate the core's. A plain widget with a cached image, an overlay and chunked paths is
 less code and much faster at this scale. Raster, not OpenGL: it works under remote desktop and in CI, and the measurements above say it's enough.
 
-### ADR-9: Text is measured with a fixed table
+### ADR-9: Horizontal and vertical lines aren't smoothed
+
+Smoothing a 1-pixel line that falls between two rows of pixels gives a 2-pixel grey smear, which is most of what a drawing is made of. So a chunk has two paths: exactly horizontal and vertical lines go in one drawn without smoothing, and everything else in one drawn with it. Sharp where it can be sharp, smooth where it's curved or diagonal. The cost is none in time and two paths per chunk.
+
+### ADR-10: Text is measured with a fixed table
 
 Layout (extents, dimension text placement) uses Helvetica's published widths, so results don't depend on what fonts a computer has. What's drawn uses a real font, so positions
 can differ slightly from a program with a different font. SHX fonts aren't read.
@@ -145,7 +151,11 @@ can differ slightly from a program with a different font. SHX fonts aren't read.
 | An index query near the cursor | under 2 ms (measured 0.03 ms) |
 | A snap query at the cursor | under 2 ms (measured 0.4 ms at drawing scale, 0.07 ms zoomed in, 6.5 ms with thousands under the aperture) |
 | Read a `.draftworx` | under 3 s (measured 1.8 s) |
-| Write a `.draftworx` | under 5 s (measured 0.6 s) |
+| Write a `.draftworx` | under 5 s (measured 0.7 s) |
+| A mouse move, with what it paints | under 16 ms (measured 1 ms, offscreen) |
+| A pan with everything in view | under 50 ms (measured 30 ms) |
+| Repaint zoomed in | measured 13 ms |
+| First paint after opening | measured 235 ms |
 
 ## Failure modes
 
@@ -160,4 +170,4 @@ can differ slightly from a program with a different font. SHX fonts aren't read.
 | Malformed or truncated file | A message saying where. Nothing is built from it. |
 | Newer format version | Says to update. The file isn't touched. |
 | A command fails part way | The whole Transaction rolls back. |
-| A crash while editing | Recovery file, offered on next start (planned, see `ROADMAP.md`). |
+| A crash or power cut while editing | A copy of unsaved work is kept every minute in the program's own folder, and offered on the next start. It's never written over your file. |

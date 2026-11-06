@@ -660,6 +660,8 @@ class SnapEngine:
 
     def pick(self, q: SnapQuery, previous: Candidate | None = None) -> SnapResult:
         """Choose. The candidate chosen last time gets a small head start, so it doesn't flicker as the mouse shakes."""
+        if not q.enabled:
+            return SnapResult(self.free_point(q), None, (), ())
         offers = self.candidates(q)
         chosen: Candidate | None = None
         if offers:

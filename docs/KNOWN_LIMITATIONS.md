@@ -4,7 +4,7 @@ DraftWorx is deliberately small. A simple result mustn't look like an exact one,
 
 ## Not there yet
 
-This is early. Only the core exists so far: geometry, the drawing, undo and files. There's no window yet. See `ROADMAP.md`.
+This is early. You can draw lines, polylines, rectangles, circles, arcs, ellipses, points and text, select them, drag their handles, and move, copy, rotate, scale, mirror and erase them. Nothing else yet: no DXF, trim, offset, dimensions, hatch, block creation or printing. See `ROADMAP.md`.
 
 ## By design
 
@@ -12,6 +12,11 @@ This is early. Only the core exists so far: geometry, the drawing, undo and file
 - **No DWG.** DXF is the exchange format.
 - **No paper space or viewports**, so one scale per sheet (`ARCHITECTURE.md`, ADR-5). A DXF that has them keeps them, but they aren't shown or editable.
 - **No parametric constraints.**
+
+## Display
+
+- Paragraph text shows its words, wrapped to its width. Fonts, colours and sizes set inside the text aren't shown yet.
+- SHX fonts can't be read, so text in them is drawn in a plain sans.
 
 ## Accuracy
 
@@ -22,5 +27,6 @@ This is early. Only the core exists so far: geometry, the drawing, undo and file
 
 ## Not verified
 
+- How it feels. It's only been driven by tests and looked at in screenshots. Nobody has drawn with it by hand, on Windows or Linux.
 - Native Windows use by hand. CI runs on Windows, offscreen.
 - AutoCAD reading files written here: it can't be run in CI.

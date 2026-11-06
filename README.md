@@ -5,11 +5,24 @@
 Not more features than AutoCAD. Just everyday drafting that's easier: snaps that find the point you meant without a settings dialog, typing a length wherever you are,
 trimming the bit in the way, one Dimension tool that reads what you point at, and DXF files that come back undamaged.
 
-> **Status: under construction.** The geometry kernel, the drawing model, undo and saving exist and are tested. There's no window yet. See [the roadmap](docs/ROADMAP.md).
+> **Status: under construction.** You can draw, snap, select, edit and save. There's no DXF, trim, dimensions or printing yet, and nobody has used it by hand. See [the roadmap](docs/ROADMAP.md).
+
+![DraftWorx drawing a line, lined up with a corner it picked up by pausing on it](docs/images/screenshot.png)
 
 Copyright © 2026 Nate Robertson. No accounts, telemetry, advertisements or feature limits.
 
+## Try it
+
+```sh
+python -m pip install "draftworx @ git+https://github.com/nrobertson152/DraftWorx"
+draftworx-gui
+```
+
+Type `L` and Enter to draw a line. Type a length and Enter. Pause on a corner to line up with it. Ctrl+K finds anything.
+
 ## Read more
+
+- [How snapping behaves](docs/SNAPPING.md)
 
 - [Architecture and decisions](docs/ARCHITECTURE.md)
 - [Roadmap](docs/ROADMAP.md)

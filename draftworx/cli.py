@@ -36,6 +36,16 @@ def self_test() -> int:
         print("self-test failed: undo left something behind", file=sys.stderr)
         return 1
     print(f"{PROGRAM} self-test passed: drawing, saving, reading back and undo all work.")
+    try:
+        from .gui.app import self_test as window_test
+    except ImportError:
+        print("The window wasn't tested, because PySide6 isn't available.")
+        return 0
+    ok, what = window_test()
+    if not ok:
+        print("self-test failed: the window didn't work", file=sys.stderr)
+        return 1
+    print(f"Window: {what}.")
     return 0
 
 
@@ -43,9 +53,17 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="draftworx", description="DraftWorx: a lightweight, offline 2D CAD program")
     parser.add_argument("--version", action="version", version=f"draftworx {__version__}")
     parser.add_argument("--self-test", action="store_true", help="check this installation works, and exit")
+    parser.add_argument("drawing", nargs="?", help="a drawing to open")
     args = parser.parse_args(argv)
     if args.self_test:
         return self_test()
+    if args.drawing is not None or argv is None:
+        try:
+            from .gui.app import main as window
+        except ImportError as exc:
+            print(f"The window can't start: {exc}", file=sys.stderr)
+            return 1
+        return window([args.drawing] if args.drawing else [])
     parser.print_help()
     return 0
 
