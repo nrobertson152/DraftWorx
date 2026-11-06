@@ -17,6 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from draftworx.core.curves import Arc, Circle, Line, Polyline  # noqa: E402
+from draftworx.core.dxf import read_dxf, write_dxf  # noqa: E402
 from draftworx.core.model import Document  # noqa: E402
 from draftworx.core.native import dumps, loads  # noqa: E402
 from draftworx.core.snap import SnapEngine, SnapQuery  # noqa: E402
@@ -133,6 +134,12 @@ def main() -> int:
     results.append(("read a file", t, 30.0 * k))
     t, _ = timed(lambda: doc.fingerprint())
     results.append(("fingerprint", t, 20.0 * k))
+    t, dxf = timed(lambda: write_dxf(doc))
+    results.append((f"write a DXF ({len(dxf) / 1e6:.1f} MB)", t, 30.0 * k))
+    t, (from_dxf, _) = timed(lambda: read_dxf(dxf))
+    results.append(("read a DXF", t, 60.0 * k))
+    t, _ = timed(lambda: write_dxf(from_dxf))
+    results.append(("write that DXF back, unchanged", t, 30.0 * k))
 
     def undo_all():
         eid = next(iter(doc.entities))

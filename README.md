@@ -5,7 +5,7 @@
 Not more features than AutoCAD. Just everyday drafting that's easier: snaps that find the point you meant without a settings dialog, typing a length wherever you are,
 trimming the bit in the way, one Dimension tool that reads what you point at, and DXF files that come back undamaged.
 
-> **Status: under construction.** You can draw, snap, select, edit and save. There's no DXF, trim, dimensions or printing yet, and nobody has used it by hand. See [the roadmap](docs/ROADMAP.md).
+> **Status: under construction.** You can draw, snap, select, edit, and open and save DXF without damaging it. There's no trim, dimensions or printing yet, and nobody has used it by hand. See [the roadmap](docs/ROADMAP.md).
 
 ![DraftWorx drawing a line, lined up with a corner it picked up by pausing on it](docs/images/screenshot.png)
 

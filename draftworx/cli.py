@@ -9,6 +9,7 @@ from pathlib import Path
 
 from . import PROGRAM, __version__
 from .core.curves import Arc, Circle, Line, Polyline
+from .core.dxf import check_written, read_dxf, write_dxf
 from .core.model import Document
 from .core.native import dumps, loads
 from .core.safefile import write_verified
@@ -35,7 +36,15 @@ def self_test() -> int:
     if doc.entities:
         print("self-test failed: undo left something behind", file=sys.stderr)
         return 1
-    print(f"{PROGRAM} self-test passed: drawing, saving, reading back and undo all work.")
+    with doc.transaction("Self-test") as t:
+        t.add(Line(Vec(0.0, 0.0), Vec(100.0, 0.0)))
+    first = write_dxf(doc)
+    back, _ = read_dxf(first)
+    check_written(first, doc)
+    if write_dxf(back) != first:
+        print("self-test failed: a DXF file didn't come back the same", file=sys.stderr)
+        return 1
+    print(f"{PROGRAM} self-test passed: drawing, saving, reading back, undo and DXF all work.")
     try:
         from .gui.app import self_test as window_test
     except ImportError:

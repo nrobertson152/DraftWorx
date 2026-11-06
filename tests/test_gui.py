@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The real window, driven by real Qt events."""
 import math
+import time
 from pathlib import Path
 
 import pytest
@@ -14,10 +15,10 @@ from PySide6.QtWidgets import QApplication, QComboBox, QLineEdit, QMessageBox, Q
 
 from draftworx.core import recovery  # noqa: E402
 from draftworx.core.config import Config  # noqa: E402
-from draftworx.core.curves import Circle, Line  # noqa: E402
+from draftworx.core.curves import Circle, Line, Polyline  # noqa: E402
 from draftworx.core.files import open_drawing  # noqa: E402
 from draftworx.core.model import BlockDef, Entity, Layer, Linetype, Style  # noqa: E402
-from draftworx.core.shapes import Insert, Text  # noqa: E402
+from draftworx.core.shapes import Insert, Solid, Text  # noqa: E402
 from draftworx.core.vec import Vec  # noqa: E402
 from draftworx.gui import theme as themes  # noqa: E402
 from draftworx.gui.palette import Entry, Palette  # noqa: E402
@@ -799,3 +800,168 @@ def test_opening_a_file_given_on_the_command_line(app, tmp_path):
     assert len(w.session.doc.entities) == 1
     assert open_drawing(p).doc.fingerprint() == w.session.doc.fingerprint()
     w.close()
+
+
+DATA = Path(__file__).parent / "data"
+
+
+def overlapping(a, b):
+    return Solid((Vec(a, a), Vec(b, a), Vec(b, b), Vec(a, b)))
+
+
+class TestFilledThings:
+    def test_two_overlapping_solids_dont_cut_a_hole_in_each_other(self, hand):
+        add(hand, overlapping(20, 80), overlapping(50, 110))
+        ink = hand.w.theme.canvas["ink"]
+        assert hand.has_color_near(35, 35, ink) and hand.has_color_near(65, 65, ink) and hand.has_color_near(95, 95, ink)
+
+    def test_a_wide_polyline_is_as_wide_as_it_says(self, hand):
+        add(hand, Polyline((Vec(20.0, 50.0), Vec(180.0, 50.0)), width=20.0))
+        ink = hand.w.theme.canvas["ink"]
+        assert hand.has_color_near(100, 58, ink, 0)
+        assert not hand.has_color_near(100, 65, ink, 0)
+
+    def test_a_tapered_polyline_narrows(self, hand):
+        add(hand, Polyline((Vec(20.0, 50.0), Vec(180.0, 50.0), Vec(190.0, 50.0)), widths=((30.0, 0.0), (0.0, 0.0), (0.0, 0.0))))
+        ink = hand.w.theme.canvas["ink"]
+        assert hand.has_color_near(30, 60, ink, 0)
+        assert not hand.has_color_near(150, 60, ink, 0)
+        # the part with no width still shows as a line
+        assert hand.has_color_near(185, 50, ink)
+
+    def test_a_wide_arc_in_a_polyline(self, hand):
+        add(hand, Polyline((Vec(50.0, 50.0), Vec(150.0, 50.0)), (1.0, 0.0), width=10.0))
+        ink = hand.w.theme.canvas["ink"]
+        # a half circle with its bulge to the right of the way it goes: below, here
+        assert hand.has_color_near(100, 3, ink, 1) or hand.has_color_near(100, 0, ink, 1)
+        assert not hand.has_color_near(100, 50, ink, 1)
+
+
+class TestDxfInTheWindow:
+    def write(self, tmp_path, build, version="R2013", name="a.dxf"):
+        ezdxf = pytest.importorskip("ezdxf")
+        doc = ezdxf.new(version)
+        build(doc, doc.modelspace())
+        path = tmp_path / name
+        doc.saveas(path)
+        return path
+
+    def test_it_opens_and_shows_what_it_holds(self, hand, tmp_path):
+        def build(doc, m):
+            m.add_line((20, 50), (180, 50), dxfattribs={"color": 1})
+            m.add_line((20, 100), (180, 100), dxfattribs={"color": 3})
+        assert hand.w.open_path(str(self.write(tmp_path, build)))
+        hand.fit()
+        assert hand.has_color_near(100, 50, hand.c.scene.color_for(0xff0000).name()) and hand.has_color_near(100, 100, hand.c.scene.color_for(0x00ff00).name())
+
+    def test_what_cant_be_edited_still_shows(self, hand, tmp_path):
+        def build(doc, m):
+            m.add_linear_dim(base=(20, 100), p1=(20, 50), p2=(180, 50), dxfattribs={"color": 1}).render()
+            m.add_leader([(20, 20), (60, 20)], dxfattribs={"color": 3})
+            h = m.add_hatch(color=5)
+            h.paths.add_polyline_path([(100, 10), (180, 10), (180, 40), (100, 40)], is_closed=True)
+        assert hand.w.open_path(str(self.write(tmp_path, build)))
+        hand.fit()
+        color = hand.c.scene.color_for
+        assert hand.has_color_near(40, 100, color(0xff0000).name())     # the dimension line, in its block
+        assert hand.has_color_near(40, 20, color(0x00ff00).name())      # the leader
+        assert hand.has_color_near(140, 10, color(0x0000ff).name())     # the hatch's edge
+
+    def test_clicking_it_selects_it_and_the_panel_names_it(self, hand, tmp_path):
+        def build(doc, m):
+            m.add_leader([(20, 20), (160, 20)])
+        hand.w.open_path(str(self.write(tmp_path, build)))
+        hand.fit()
+        hand.click(100, 20)
+        assert len(hand.w.session.selection) == 1
+        assert hand.w.panel.title.text() == "Leader"
+
+    def test_it_says_what_it_found_and_keeps_saying_it(self, hand, tmp_path):
+        assert hand.w.panel.notes.isHidden()
+
+        def build(doc, m):
+            h = m.add_hatch()
+            h.paths.add_polyline_path([(0, 0), (1, 0), (1, 1)], is_closed=True)
+            m.add_ray((0, 0), (1, 0))
+        hand.w.open_path(str(self.write(tmp_path, build)))
+        said = hand.w.panel.notes.text()
+        assert "1 hatch" in said and "outlines" in said and "1 ray" in said
+        assert not hand.w.panel.notes.isHidden()
+        hand.click(100, 100)
+        assert hand.w.panel.notes.text() == said
+        hand.w.new_drawing()
+        assert hand.w.panel.notes.isHidden()
+
+    def test_a_file_that_isnt_one_gets_a_message(self, hand, tmp_path, monkeypatch):
+        shown = []
+        monkeypatch.setattr(QMessageBox, "warning", lambda parent, title, text: shown.append(text))
+        path = tmp_path / "a.dxf"
+        path.write_bytes(b"not a drawing")
+        assert not hand.w.open_path(str(path))
+        assert "isn't a DXF" in shown[0]
+
+    def test_saving_as_dxf_by_choosing_it_in_the_dialog(self, hand, tmp_path, monkeypatch):
+        add(hand, line(20, 50, 180, 50))
+        target = tmp_path / "chosen"
+        monkeypatch.setattr("draftworx.gui.window.QFileDialog.getSaveFileName", lambda *a, **k: (str(target), "DXF file (*.dxf)"))
+        assert hand.w.save_as()
+        assert (tmp_path / "chosen.dxf").read_bytes()[:40].strip().startswith(b"0")
+        assert open_drawing(tmp_path / "chosen.dxf").doc.entities
+
+    def test_exporting_r12_leaves_the_drawing_as_it_was(self, hand, tmp_path, monkeypatch):
+        add(hand, line(20, 50, 180, 50), Circle(Vec(100.0, 100.0), 20.0))
+        monkeypatch.setattr("draftworx.gui.window.QFileDialog.getSaveFileName", lambda *a, **k: (str(tmp_path / "old"), "DXF file (*.dxf)"))
+        assert hand.w.export_r12()
+        assert b"AC1009" in (tmp_path / "old.dxf").read_bytes()[:200]
+        assert hand.w.opened.path is None and hand.doc.dirty
+        assert "Exported old.dxf" in hand.w.session.message
+
+    def test_a_save_of_an_opened_file_leaves_the_rest_alone(self, hand, tmp_path):
+        def build(doc, m):
+            m.add_line((20, 50), (180, 50))
+            m.add_ray((0, 0), (1, 0))
+        path = self.write(tmp_path, build)
+        before = path.read_bytes()
+        hand.w.open_path(str(path))
+        assert hand.w.save()
+        assert path.read_bytes() == before
+        with hand.w.session.doc.transaction("x") as t:
+            t.add(line(1, 1, 2, 2))
+        assert hand.w.save()
+        assert b"RAY" in path.read_bytes() and len(open_drawing(path).doc.entities) == 3
+
+    @pytest.mark.parametrize("path", sorted(DATA.glob("*.dxf")), ids=lambda p: p.name)
+    def test_every_real_file_opens_and_paints(self, hand, path):
+        assert hand.w.open_path(str(path))
+        hand.w.canvas.fit()
+        hand.c.redraw()
+        hand.app.processEvents()
+        assert not hand.c.grab().isNull()
+        hand.move(10, 10)
+
+    def test_blocks_in_blocks_in_arrays_dont_stop_the_program(self, hand, tmp_path, monkeypatch):
+        """A file a few kilobytes long can describe more than any computer can draw: twenty copies of twenty copies, ten levels down."""
+        said = []
+        monkeypatch.setattr(hand.w, "_say", said.append)
+
+        def build(doc, m):
+            b = doc.blocks.new("L0")
+            b.add_line((0, 0), (1, 1))
+            for level in range(1, 10):
+                b = doc.blocks.new(f"L{level}")
+                for i in range(20):
+                    b.add_blockref(f"L{level - 1}", (i, level))
+            big = m.add_blockref("L9", (0, 0))
+            big.grid((1000, 1000), (1, 1))
+        path = self.write(tmp_path, build)
+        start = time.monotonic()
+        assert hand.w.open_path(str(path))
+        hand.w.canvas.fit()
+        hand.c.redraw()
+        hand.app.processEvents()
+        hand.c.grab()
+        hand.move(5, 5)
+        hand.click(5, 5)
+        hand.key(Qt.Key.Key_Escape)
+        assert time.monotonic() - start < 120.0
+        assert any("only part" in s for s in said)

@@ -11,15 +11,17 @@ import math
 from dataclasses import dataclass
 
 from PySide6.QtCore import QPointF, Qt
-from PySide6.QtGui import QBrush, QColor, QFont, QFontMetricsF, QPainter, QPainterPath, QPen, QTransform
+from PySide6.QtGui import QBrush, QColor, QFont, QFontMetricsF, QPainter, QPainterPath, QPainterPathStroker, QPen, QTransform
 
 from ..core import color as colors
 from ..core.curves import Arc, Circle, EllipseArc, Line, Polyline, Spline
 from ..core.model import BYBLOCK_TYPE, BYLAYER_TYPE, WEIGHT_BYBLOCK, WEIGHT_BYLAYER, WEIGHT_DEFAULT, Document, Entity, Style
-from ..core.shapes import AttDef, Insert, MText, Node, Solid, Text
+from ..core.shapes import AttDef, Foreign, Insert, MText, Node, Solid, Text
 from ..core.vec import IDENTITY, Affine, BBox, bbox_union
 
 CHUNK = 2000            # things to a chunk: small enough that an edit is quick, big enough that culling stays cheap
+MOST_PIECES = 1_000_000 # of one object: blocks in blocks in arrays can multiply past anything memory or patience could hold
+MOST_IN_ALL = 5_000_000 # of the whole drawing, for the same reason
 DEFAULT_WEIGHT = 25     # hundredths of a millimetre
 PX_PER_MM = 96.0 / 25.4
 _CURVES = (Line, Arc, Circle, EllipseArc, Spline)
@@ -143,6 +145,53 @@ def mtext_paths(t: MText, doc: Document) -> QPainterPath:
     return out
 
 
+@dataclass(frozen=True, slots=True)
+class _Wide:
+    """A polyline with a width of its own, in drawing units, which is drawn as the area it covers."""
+    line: Polyline
+
+    def transformed(self, m: Affine) -> "_Wide":
+        return _Wide(self.line.transformed(m))
+
+
+def wide_path(s: Polyline) -> QPainterPath:
+    """The area a wide polyline covers. A constant width has square ends and mitred corners. A changing width, as an arrowhead has, tapers along each piece."""
+    if not s.widths:
+        stroker = QPainterPathStroker()
+        stroker.setWidth(s.width)
+        stroker.setCapStyle(Qt.PenCapStyle.FlatCap)
+        stroker.setJoinStyle(Qt.PenJoinStyle.MiterJoin)
+        line = QPainterPath()
+        s.emit(line)
+        return stroker.createStroke(line)
+    out = QPainterPath()
+    out.setFillRule(Qt.FillRule.WindingFill)
+    n = len(s.pts)
+    box = s.bbox()
+    chord = max(box[2] - box[0], box[3] - box[1], 1e-9) * 1e-3
+    for i, seg in enumerate(s.segments):
+        w0, w1 = s.widths[i % n]
+        pts = seg.flatten(chord)
+        count = len(pts) - 1
+        if count < 1 or (w0 <= 0.0 and w1 <= 0.0):
+            continue
+        left: list[QPointF] = []
+        right: list[QPointF] = []
+        for j, p in enumerate(pts):
+            a, b = pts[max(j - 1, 0)], pts[min(j + 1, count)]
+            dx, dy = b[0] - a[0], b[1] - a[1]
+            length = math.hypot(dx, dy) or 1.0
+            half = (w0 + (w1 - w0) * j / count) * 0.5
+            nx, ny = -dy / length * half, dx / length * half
+            left.append(QPointF(p[0] + nx, p[1] + ny))
+            right.append(QPointF(p[0] - nx, p[1] - ny))
+        out.moveTo(left[0])
+        for q in left[1:] + right[::-1]:
+            out.lineTo(q)
+        out.closeSubpath()
+    return out
+
+
 def _segment(a, b, path: QPainterPath, crisp: QPainterPath) -> None:
     """Horizontal and vertical lines go where they'll be drawn sharp."""
     dx, dy = abs(a[0] - b[0]), abs(a[1] - b[1])
@@ -158,6 +207,9 @@ class Scene:
         self.chunks: dict[_Look, list[_Chunk]] = {}
         self._where: dict[int, list[_Chunk]] = {}
         self._paths: dict[int, tuple[Entity, QPainterPath]] = {}
+        self._left = MOST_PIECES
+        self._pieces = 0
+        self.cut_short = 0      # how many objects have more to them than is being drawn
         self.rebuild()
 
     # ---------------------------------------------------------------------------- what an entity looks like
@@ -202,6 +254,8 @@ class Scene:
         self.chunks.clear()
         self._where.clear()
         self._paths.clear()
+        self._pieces = 0
+        self.cut_short = 0
         for e in self.doc.sorted_entities():
             self._add(e)
 
@@ -228,7 +282,12 @@ class Scene:
         if self.doc.is_hidden(e.style):
             return
         pieces: dict[_Look, list[tuple[object, Affine]]] = {}
+        allowed = min(MOST_PIECES, MOST_IN_ALL - self._pieces)
+        self._left = allowed
         self._walk(e.shape, e.style, None, IDENTITY, pieces, 0)
+        self._pieces += allowed - max(self._left, 0)
+        if self._left < 0:
+            self.cut_short += 1
         box = self.doc.shape_bbox(e.shape)
         placed: list[_Chunk] = []
         for look, items in pieces.items():
@@ -245,6 +304,14 @@ class Scene:
         """What a shape draws, sorted by how it looks. A block's contents can each look different."""
         effective = self._effective(style, parent)
         k = type(s)
+        if k is Foreign:
+            # what's known of something from a file: its curves, and the block that draws the rest
+            if s.curves:
+                look = self.look_of(effective)
+                out.setdefault(look, []).extend((c, m) for c in s.curves)
+            if s.block:
+                self._walk(Insert(s.block, s.at), style, parent, m, out, depth)
+            return
         if k is Insert:
             if depth >= 16:
                 return
@@ -261,6 +328,9 @@ class Scene:
                     local = s.matrix(d.base, col, row)
                     full = local.then(m) if moved else local
                     for inner in d.entities:
+                        self._left -= 1
+                        if self._left < 0:
+                            return
                         if inner.style.layer != "0" and self.doc.is_hidden(inner.style):
                             continue
                         if type(inner.shape) is AttDef:
@@ -270,10 +340,17 @@ class Scene:
         look = self.look_of(effective)
         if k in (Text, MText, Solid, AttDef):
             look = _Look(look.rgb, (), 0, True)
+        elif k is Polyline and (s.width or s.widths):
+            out.setdefault(_Look(look.rgb, (), 0, True), []).append((_Wide(s), m))
+            if s.widths and not all(a > 0.0 or b > 0.0 for a, b in s.widths):
+                out.setdefault(look, []).append((s, m))     # parts of it have no width of their own, so they need the ordinary line too
+            return
         out.setdefault(look, []).append((s, m))
 
     def _build(self, chunk: _Chunk) -> None:
         path = QPainterPath()
+        if chunk.look.fill:
+            path.setFillRule(Qt.FillRule.WindingFill)   # so two filled things that overlap don't cut a hole in each other
         # a dash pattern has to run on round corners, so patterned lines stay in one path
         crisp = QPainterPath() if not chunk.look.pattern and not chunk.look.fill else None
         points: list[QPointF] = []
@@ -290,12 +367,20 @@ class Scene:
         chunk.dirty = False
 
     def _emit(self, s, path, points, m: Affine, crisp: QPainterPath | None = None) -> None:
+        try:
+            self._emit_placed(s, path, points, m, crisp)
+        except (ValueError, ArithmeticError):
+            pass        # a block's copy scaled to nothing has nothing to draw
+
+    def _emit_placed(self, s, path, points, m: Affine, crisp: QPainterPath | None) -> None:
         k = type(s)
         moved = m is not IDENTITY
-        if k is Line and crisp is not None:
+        if k is _Wide:
+            path.addPath(wide_path((s.transformed(m) if moved else s).line))
+        elif k is Line and crisp is not None:
             q = s.transformed(m) if moved else s
             _segment(q.a, q.b, path, crisp)
-        elif k is Polyline and crisp is not None and not s.width and not s.widths:
+        elif k is Polyline and crisp is not None:
             q = s.transformed(m) if moved else s
             for seg in q.segments:
                 if type(seg) is Line:

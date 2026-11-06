@@ -45,10 +45,13 @@ Every object has `id` and `type`. These are optional and default as shown: `laye
 | `mtext` | `p`, `height`, `text` (DXF's formatting codes), optionally `width`, `rotation`, `attach` (1 to 9), `style`, `spacing` |
 | `attdef` | the fields of `text`, plus `tag`, optionally `prompt`, `invisible`, `constant` |
 | `insert` | `block`, `p`, optionally `sx`, `sy`, `rotation`, `attribs` (like `attdef`), `columns`, `rows`, `column_spacing`, `row_spacing` |
+| `foreign` | `dxf_type`, optionally `block` and `at` (a block that draws it, and where), and `curves` (lines, arcs, circles, ellipses, polylines or splines to show for it). Something from a DXF that can't be changed here, whose `source` holds what it really is |
 
 **Colours** are one integer: 1 to 255 is a colour index, 256 ByLayer, 0 ByBlock, and `16777216 + 0xRRGGBB` a true colour. **Weights** are in hundredths of a millimetre, or -1 ByLayer, -2 ByBlock, -3 default.
 
 `extras` and `source` hold what a DXF file said beyond the model, so it can be written back (`DXF.md`).
+
+`source` is `{"dxf": "the file's own lines"}`, on an object, a table entry or a block. It can also say `"reshaped": true` or `"restyled": true` if the thing has changed since it was read, so that the old text isn't mistaken for the current one. Without those, the text is written back as it is. Empty text means the file didn't mention it. `extras.dxf` holds the rest of the file: its version, line endings, header, the order of its sections, tables and blocks, and whatever we don't read.
 
 ## Versions
 

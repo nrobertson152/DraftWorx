@@ -142,6 +142,12 @@ Smoothing a 1-pixel line that falls between two rows of pixels gives a 2-pixel g
 Layout (extents, dimension text placement) uses Helvetica's published widths, so results don't depend on what fonts a computer has. What's drawn uses a real font, so positions
 can differ slightly from a program with a different font. SHX fonts aren't read.
 
+### ADR-11: A DXF is kept as its own text
+
+Reading a DXF into a model and writing the model back out loses whatever the model doesn't hold, and no model holds everything. So every object, table entry and block keeps the exact text it came from, alongside what it means, and the rest of the file is kept as it was. Writing uses that text for as long as the thing is still what the text says, which is a comparison of values and can't go stale: undoing a change makes the same bytes come back, without anything having to remember.
+
+It costs memory, about the size of the file, and it means two descriptions of each object that have to be told apart. In exchange, "we didn't damage your file" becomes something a test can check exactly, on any file, including damaged ones and ones from programs we've never heard of. *Challenged and kept:* parsing unknown things into generic tag lists, as ezdxf does, handles more editing of them but reformats numbers and reorders tags, so a file nobody changed would still come back different.
+
 ## What's measured, and what it should stay under
 
 `tools/bench.py` reports these, and CI runs a quick version. They're from this development machine, not a promise about yours.
@@ -151,7 +157,9 @@ can differ slightly from a program with a different font. SHX fonts aren't read.
 | An index query near the cursor | under 2 ms (measured 0.03 ms) |
 | A snap query at the cursor | under 2 ms (measured 0.4 ms at drawing scale, 0.07 ms zoomed in, 6.5 ms with thousands under the aperture) |
 | Read a `.draftworx` | under 3 s (measured 1.8 s) |
-| Write a `.draftworx` | under 5 s (measured 0.7 s) |
+| Write a `.draftworx` | under 5 s (measured 0.6 s) |
+| Read a DXF of the same | under 5 s (measured 2.8 s, 21 MB) |
+| Write a DXF of the same | under 5 s (measured 0.8 s, or 0.3 s for one that hasn't changed) |
 | A mouse move, with what it paints | under 16 ms (measured 1 ms, offscreen) |
 | A pan with everything in view | under 50 ms (measured 30 ms) |
 | Repaint zoomed in | measured 13 ms |
@@ -168,6 +176,8 @@ can differ slightly from a program with a different font. SHX fonts aren't read.
 | File changed by someone else since it was opened | The save stops and says so (`ChangedOnDisk`). |
 | Read-only file | Respected, even where the operating system would let a rename through. |
 | Malformed or truncated file | A message saying where. Nothing is built from it. |
+| A DXF that holds what we don't understand | Kept and written back, and we say what it is. |
+| A DXF that describes more than can be drawn, such as blocks in blocks in arrays | Drawn in part, with a limit on each object and on the drawing, and said so. Clicking and snapping have limits of their own. |
 | Newer format version | Says to update. The file isn't touched. |
 | A command fails part way | The whole Transaction rolls back. |
 | A crash or power cut while editing | A copy of unsaved work is kept every minute in the program's own folder, and offered on the next start. It's never written over your file. |

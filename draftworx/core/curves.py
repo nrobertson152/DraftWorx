@@ -798,6 +798,81 @@ def _dist(a, b) -> float:
     return math.hypot(a[0] - b[0], a[1] - b[1])
 
 
+def _cubic_basis(knots, span: int, u: float) -> list[float]:
+    """The four cubic basis functions that aren't zero at u."""
+    left, right = [0.0] * 4, [0.0] * 4
+    n = [1.0, 0.0, 0.0, 0.0]
+    for j in range(1, 4):
+        left[j] = u - knots[span + 1 - j]
+        right[j] = knots[span + j] - u
+        saved = 0.0
+        for r in range(j):
+            t = n[r] / (right[r + 1] + left[j - r])
+            n[r] = saved + right[r + 1] * t
+            saved = left[j - r] * t
+        n[j] = saved
+    return n
+
+
+def spline_through(points, start_tangent: Vec | None = None, end_tangent: Vec | None = None) -> Spline:
+    """A cubic through these points, for a file that gives only those. Spaced by the distance between them, smooth at every one, and leaving its
+    ends along the tangents given, or else along a parabola through the nearest three points. Another program's may differ slightly between the points."""
+    pts = [Vec(p[0], p[1]) for i, p in enumerate(points) if i == 0 or (p[0], p[1]) != (points[i - 1][0], points[i - 1][1])]
+    if len(pts) < 2:
+        raise ValueError("a spline through points needs at least two different points")
+    gaps = [pts[i].distance(pts[i + 1]) for i in range(len(pts) - 1)]
+    n = len(gaps)
+    us = [0.0]
+    for h in gaps:
+        us.append(us[-1] + h)
+
+    def ends_slope(a: Vec, b: Vec, c: Vec, h0: float, h1: float) -> Vec:
+        return (b - a) * ((2.0 * h0 + h1) / (h0 * (h0 + h1))) - (c - b) * (h0 / (h1 * (h0 + h1)))
+
+    if n == 1:
+        d0 = d1 = (pts[1] - pts[0]) * (1.0 / gaps[0])
+    else:
+        d0 = ends_slope(pts[0], pts[1], pts[2], gaps[0], gaps[1])
+        d1 = ends_slope(pts[-1], pts[-2], pts[-3], gaps[-1], gaps[-2]) * -1.0
+    for given, is_start in ((start_tangent, True), (end_tangent, False)):
+        if given is not None and (given[0] or given[1]):
+            unit = Vec(given[0], given[1]) * (1.0 / math.hypot(given[0], given[1]))
+            if is_start:
+                d0 = unit
+            else:
+                d1 = unit
+    knots = (us[0],) * 4 + tuple(us[1:n]) + (us[n],) * 4
+    second = pts[0] + d0 * (gaps[0] / 3.0)
+    last_but_one = pts[-1] - d1 * (gaps[-1] / 3.0)
+    # each inner point sits on three control points, which makes a tridiagonal system
+    inner = n - 1
+    middle: list[Vec] = []
+    if inner:
+        a, b, c = [0.0] * inner, [0.0] * inner, [0.0] * inner
+        rx, ry = [0.0] * inner, [0.0] * inner
+        for k in range(inner):
+            span = k + 4
+            basis = _cubic_basis(knots, span, us[k + 1])
+            a[k], b[k], c[k] = basis[0], basis[1], basis[2]
+            rx[k], ry[k] = pts[k + 1][0], pts[k + 1][1]
+        rx[0] -= a[0] * second[0]
+        ry[0] -= a[0] * second[1]
+        rx[-1] -= c[-1] * last_but_one[0]
+        ry[-1] -= c[-1] * last_but_one[1]
+        for k in range(1, inner):
+            w = a[k] / b[k - 1]
+            b[k] -= w * c[k - 1]
+            rx[k] -= w * rx[k - 1]
+            ry[k] -= w * ry[k - 1]
+        xs, ys = [0.0] * inner, [0.0] * inner
+        xs[-1], ys[-1] = rx[-1] / b[-1], ry[-1] / b[-1]
+        for k in range(inner - 2, -1, -1):
+            xs[k] = (rx[k] - c[k] * xs[k + 1]) / b[k]
+            ys[k] = (ry[k] - c[k] * ys[k + 1]) / b[k]
+        middle = [Vec(x, y) for x, y in zip(xs, ys)]
+    return Spline(3, knots, (pts[0], second, *middle, last_but_one, pts[-1]), (), tuple(pts))
+
+
 def bulge_arc(p: Vec, q: Vec, bulge: float) -> Arc:
     """The arc from p to q with a DXF bulge: the tangent of a quarter of the included angle, positive counter-clockwise."""
     dx, dy = q[0] - p[0], q[1] - p[1]
