@@ -15,7 +15,7 @@ from typing import Callable, Iterable, Iterator
 
 from . import color as colors
 from .curves import Arc, Circle, EllipseArc, Polyline
-from .shapes import Insert, Shape
+from .shapes import Foreign, Insert, Shape
 from .spatial import SpatialIndex
 from .vec import BBox, Vec, bbox_union
 
@@ -195,6 +195,11 @@ _SUB = 1 << 24
 CENTRE_SUB = _SUB - 1       # the point a curve has away from itself: the centre of an arc, an insertion point
 ARC_SUB = 1 << 23           # ARC_SUB + i: the centre of a polyline's arc segment i, which may be far from the arc
 MOST_SEGMENTS = ARC_SUB - 1
+
+
+def block_used_by(shape: Shape) -> str:
+    """The block this shape draws, or an empty string."""
+    return shape.block if type(shape) is Insert or type(shape) is Foreign else ""
 
 
 def index_key(entity_id: int, sub: int = 0) -> int:
@@ -533,14 +538,15 @@ class Document:
         while grew:
             grew = False
             for k, b in self.blocks._d.items():
-                if k not in affected and any(type(e.shape) is Insert and e.shape.block.casefold() in affected for e in b.entities):
+                if k not in affected and any(block_used_by(e.shape).casefold() in affected for e in b.entities):
                     affected.add(k)
                     grew = True
         for k in affected:
             self._block_bbox.pop(k, None)
         for e in self.entities.values():
-            if type(e.shape) is Insert and e.shape.block.casefold() in affected:
-                box = self.insert_bbox(e.shape)
+            name = block_used_by(e.shape)
+            if name and name.casefold() in affected:
+                box = self.shape_bbox(e.shape)
                 if box is not None:
                     self.index.insert(index_key(e.id), box)
 
@@ -563,6 +569,8 @@ class Document:
         elif k is Insert:
             self._block_counts[s.block.casefold()] = self._block_counts.get(s.block.casefold(), 0) + 1
             self.index.insert(index_key(eid, CENTRE_SUB), (s.p[0], s.p[1], s.p[0], s.p[1]))
+        elif k is Foreign and s.block:
+            self._block_counts[s.block.casefold()] = self._block_counts.get(s.block.casefold(), 0) + 1
 
     def _unindex(self, e: Entity) -> None:
         s = e.shape
@@ -579,7 +587,7 @@ class Document:
             return
         self.index.remove(index_key(eid))
         self.index.remove(index_key(eid, CENTRE_SUB))
-        if type(s) is Insert:
+        if block_used_by(s):
             key = s.block.casefold()
             left = self._block_counts.get(key, 0) - 1
             if left > 0:
@@ -604,7 +612,7 @@ class Document:
         d = self.blocks.get(block)
         if d is None:
             return False
-        return any(isinstance(e.shape, Insert) and self._would_cycle(e.shape.block, target, seen) for e in d.entities)
+        return any(block_used_by(e.shape) and self._would_cycle(e.shape.block, target, seen) for e in d.entities)
 
     # ---- questions
 
@@ -614,8 +622,7 @@ class Document:
 
     def block_use(self, name: str) -> int:
         key = name.casefold()
-        return self._block_counts.get(key, 0) + sum(
-            1 for b in self.blocks for e in b.entities if isinstance(e.shape, Insert) and e.shape.block.casefold() == key)
+        return self._block_counts.get(key, 0) + sum(1 for b in self.blocks for e in b.entities if block_used_by(e.shape).casefold() == key)
 
     def layer_of(self, style: Style) -> Layer | None:
         return self.layers.get(style.layer)
@@ -629,7 +636,18 @@ class Document:
     def shape_bbox(self, s: Shape) -> BBox | None:
         if type(s) is Insert:
             return self.insert_bbox(s)
+        if type(s) is Foreign:
+            return self.foreign_bbox(s)
         return s.bbox()
+
+    def foreign_bbox(self, s: Foreign, _depth: int = 0) -> BBox | None:
+        box = s.bbox()
+        if s.block:
+            inner = self.block_bbox(s.block, _depth)
+            if inner is not None:
+                x, y = s.at
+                box = bbox_union(box, (inner[0] + x, inner[1] + y, inner[2] + x, inner[3] + y))
+        return box
 
     def block_bbox(self, name: str, _depth: int = 0) -> BBox | None:
         """The box round a block's contents in its own coordinates. Remembered until the block changes."""
@@ -643,7 +661,12 @@ class Document:
         box: BBox | None = None
         for e in d.entities:
             s = e.shape
-            b = self.insert_bbox(s, _depth + 1) if type(s) is Insert else s.bbox()
+            if type(s) is Insert:
+                b = self.insert_bbox(s, _depth + 1)
+            elif type(s) is Foreign:
+                b = self.foreign_bbox(s, _depth + 1)
+            else:
+                b = s.bbox()
             box = bbox_union(box, b)
         self._block_bbox[key] = (d, box)
         return box

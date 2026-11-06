@@ -9,7 +9,7 @@ import math
 from dataclasses import dataclass, replace
 
 from .curves import Arc, Circle, EllipseArc, Line, Polyline, Spline
-from .vec import Affine, BBox, Vec, bbox_of
+from .vec import Affine, BBox, Vec, bbox_of, bbox_union
 
 # Helvetica's published widths, in thousandths of the font size. Text is measured with these rather than whichever font
 # a computer happens to have, so layout and extents come out the same on Windows and Linux. Capital height is 718.
@@ -264,6 +264,29 @@ class Insert:
                        attribs=tuple(a.transformed(m) for a in self.attribs))
 
 
+@dataclass(frozen=True, slots=True)
+class Foreign:
+    """Something a file holds that can't be edited here. It goes back out exactly as it came in, from its entity's `source`.
+
+    What's here is only for showing it and snapping to it: `block` is a block that draws it, as a DXF dimension has, placed at `at`,
+    and `curves` is whatever else there is to see of it. It may be neither, and then it isn't shown at all."""
+    dxf_type: str
+    block: str = ""
+    at: Vec = Vec(0.0, 0.0)
+    curves: tuple = ()
+
+    kind = "foreign"
+
+    def bbox(self) -> BBox | None:
+        box = None
+        for c in self.curves:
+            box = bbox_union(box, c.bbox())
+        return box
+
+    def transformed(self, m: Affine) -> "Foreign":
+        raise ValueError(f"A {self.dxf_type.lower()} from a file can't be changed here.")
+
+
 Curve = Line | Arc | Circle | EllipseArc | Spline
-Shape = Curve | Polyline | Node | Solid | Text | MText | AttDef | Insert
+Shape = Curve | Polyline | Node | Solid | Text | MText | AttDef | Insert | Foreign
 CURVES = (Line, Arc, Circle, EllipseArc, Spline)

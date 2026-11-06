@@ -20,7 +20,7 @@ from typing import Iterable
 from .curves import Arc, Circle, EllipseArc, Line, Polyline, Spline
 from .intersect import intersect
 from .model import ARC_SUB, CENTRE_SUB, Document, Entity, index_key, polyline_entries, split_key
-from .shapes import AttDef, Insert, MText, Node, Solid, Text
+from .shapes import AttDef, Foreign, Insert, MText, Node, Solid, Text
 from .spatial import SpatialIndex
 from .vec import IDENTITY, Affine, Vec, near, polar, tol
 
@@ -65,6 +65,7 @@ STICK_REACH = 1.3       # the current choice stays on offer this much further ou
 MOST_CURVES = 24        # the nearest curves to look at closely: more only happens when zoomed far out
 MOST_ENTRIES = 256      # the nearest index entries to look at
 MOST_POINTS = 128       # the nearest points to offer, which is more than anyone will press Tab through
+MOST_INSIDE = 4096      # objects inside blocks to look at, because blocks in blocks can multiply past anything a mouse move could afford
 _ANYWHERE_ON_LOCK = HANDICAP[Kind.GUIDE] + GUIDE_REACH     # just being on a locked line loses to anything in reach
 
 
@@ -220,6 +221,7 @@ class SnapEngine:
         self.doc = doc
         self._crossings: dict[tuple, list[Vec]] = {}
         self._views: dict[str, _BlockView] = {}
+        self._left = MOST_INSIDE
         doc.on_change(self._forget)
 
     def _forget(self, changes=()) -> None:
@@ -247,6 +249,7 @@ class SnapEngine:
         keys = self.doc.index.query(window)
         if len(keys) > MOST_ENTRIES:
             keys = self._nearest_keys(keys, cx, cy)
+        self._left = MOST_INSIDE
         doc = self.doc
         entities = doc.entities
         exclude = q.exclude
@@ -330,6 +333,21 @@ class SnapEngine:
         elif k is Solid:
             for p in s.pts:
                 points.append((m.apply(p) if moved else p, Kind.ENDPOINT, owner))
+        elif k is Foreign:
+            self._foreign(s, owner, name, m, window, curves, points, depth)
+
+    def _foreign(self, s: Foreign, owner: int, name: tuple, m: Affine, window, curves, points, depth: int) -> None:
+        """What's drawn of something from a file that can't be edited here can still be snapped to."""
+        moved = m is not IDENTITY
+        x0, y0, x1, y1 = window
+        for j, c in enumerate(s.curves):
+            for i, seg in enumerate(c.segments if type(c) is Polyline else (c,)):
+                seg = seg.transformed(m) if moved else seg
+                b = seg.bbox()
+                if b[0] <= x1 and b[2] >= x0 and b[1] <= y1 and b[3] >= y0:
+                    self._curve_entry(seg, owner, name + (j, i), curves, points)
+        if s.block:
+            self._insert(Insert(s.block, s.at), owner, name, m, window, curves, points, depth)
 
     def _insert(self, ins: Insert, owner: int, name: tuple, m: Affine, window, curves, points, depth: int) -> None:
         if depth > 16:
@@ -350,6 +368,9 @@ class SnapEngine:
                 corners = [back.apply((x, y)) for x in (window[0], window[2]) for y in (window[1], window[3])]
                 xs, ys = [c[0] for c in corners], [c[1] for c in corners]
                 for key in view.index.query((min(xs), min(ys), max(xs), max(ys))):
+                    self._left -= 1
+                    if self._left < 0:
+                        return
                     i, sub = split_key(key)
                     e = view.items[i]
                     if e.style.layer != "0" and e.style.layer.casefold() in self.doc._hidden_layers:

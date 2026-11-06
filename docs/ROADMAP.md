@@ -8,7 +8,7 @@ Each stage ends with something that works and is tested on Windows and Linux in 
 | 1 | Geometry kernel, document, undo, `.draftworx`, safe saves | done |
 | 2 | Snap and tracking engine | done |
 | 3 | Window, canvas, commands, typed input, selection and grips, layers, properties, command search, crash recovery | done |
-| 4 | DXF read and write | |
+| 4 | DXF read and write | done |
 | 5 | Modify: trim, extend, offset, fillet, chamfer, mirror, array | |
 | 6 | Annotation: text, one Dimension tool, associativity, hatch, blocks with attributes | |
 | 7 | Print and PDF, sheets and templates, automatic cleanup | |

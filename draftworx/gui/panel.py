@@ -117,12 +117,26 @@ class ContextPanel(QFrame):
         self.scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         outer.addWidget(self.scroll, 1)
+        self.notes_title = QLabel("ABOUT THIS FILE")
+        self.notes_title.setObjectName("sectionTitle")
+        outer.addWidget(self.notes_title)
+        self.notes = QLabel("")
+        self.notes.setObjectName("small")
+        self.notes.setWordWrap(True)
+        outer.addWidget(self.notes)
+        self.set_notes([])
         self._seen = (-1, -1)
         self.refresh(True)
 
     def set_theme(self, theme) -> None:
         self.theme = theme
         self.refresh(True)
+
+    def set_notes(self, notes: list[str]) -> None:
+        """What a person should know about the file they've opened. It stays where it can be read, and doesn't get in the way."""
+        self.notes.setText("\n\n".join(notes))
+        self.notes_title.setVisible(bool(notes))
+        self.notes.setVisible(bool(notes))
 
     def _editing(self) -> bool:
         w = self.focusWidget()

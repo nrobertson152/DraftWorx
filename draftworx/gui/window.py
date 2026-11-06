@@ -16,7 +16,8 @@ from .. import __version__
 from ..core import recovery
 from ..core.commands import COMMANDS, find
 from ..core.config import Config, save_config
-from ..core.files import Opened, open_drawing, save_drawing
+from ..core.dxf import VERSIONS
+from ..core.files import Opened, export_dxf, open_drawing, save_drawing
 from ..core.model import Document
 from ..core.native import FormatError
 from ..core.safefile import ChangedOnDisk, SaveError
@@ -27,7 +28,8 @@ from .canvas import Canvas
 from .palette import Entry, Palette
 from .panel import ContextPanel
 
-FILE_FILTER = "DraftWorx drawings (*.draftworx)"
+FILE_FILTER = "Drawings (*.draftworx *.dxf);;DraftWorx drawings (*.draftworx);;DXF files (*.dxf)"
+SAVE_FILTER = "DraftWorx drawing (*.draftworx);;DXF file (*.dxf)"
 RAIL = (("Draw", ("LINE", "PLINE", "RECTANGLE", "CIRCLE", "ARC", "ELLIPSE", "TEXT")),
         ("Modify", ("MOVE", "COPY", "ROTATE", "SCALE", "MIRROR", "ERASE")))
 AUTOSAVE_MS = 60_000
@@ -368,6 +370,7 @@ class MainWindow(QMainWindow):
     def show_palette(self) -> None:
         extras = [Entry("Save", "Save the drawing", self.save, "Ctrl+S"), Entry("Open", "Open a drawing", self.open_dialog, "Ctrl+O"),
                   Entry("New", "Start a new drawing", self.new_drawing, "Ctrl+N"), Entry("Save as", "Save under another name", self.save_as),
+                  Entry("Export as DXF R12", "A copy in the oldest kind of DXF, for machines and programs that need it", self.export_r12),
                   Entry("Show the whole drawing", "Zoom to fit", lambda: self.canvas.fit(), "Home"),
                   Entry("Select all", "Select everything", self.select_all, "Ctrl+A"), Entry("Undo", "Undo the last thing", self.undo, "Ctrl+Z"),
                   Entry("Redo", "Redo what was undone", self.redo, "Ctrl+Y")]
@@ -434,6 +437,7 @@ class MainWindow(QMainWindow):
         recovery.forget(self.session_id)
         self.opened = opened
         self.canvas.set_document(opened.doc)
+        self.panel.set_notes(opened.notices)
         self.panel.refresh(True)
         self._state_changed()
         self.canvas.setFocus()
@@ -454,8 +458,8 @@ class MainWindow(QMainWindow):
         self._adopt(opened)
         self.config.remember(str(path))
         save_config(self.config)
-        for note in opened.notices:
-            self._say(note)
+        if self.canvas.scene.cut_short:
+            self._say("Some blocks here are placed so many times over that only part of them can be drawn. They're all still in the file.")
         return True
 
     def save(self) -> bool:
@@ -465,12 +469,28 @@ class MainWindow(QMainWindow):
 
     def save_as(self) -> bool:
         suggested = str(self.opened.path) if self.opened.path else "Untitled.draftworx"
-        path, _ = QFileDialog.getSaveFileName(self, "Save the drawing", suggested, FILE_FILTER)
+        path, chosen = QFileDialog.getSaveFileName(self, "Save the drawing", suggested, SAVE_FILTER, "DXF file (*.dxf)" if suggested.casefold().endswith(".dxf") else "")
         if not path:
             return False
         if not Path(path).suffix:
-            path += ".draftworx"
+            path += ".dxf" if "dxf" in chosen else ".draftworx"
         return self._save_to(path)
+
+    def export_r12(self) -> bool:
+        """A copy for something that only reads the old format. What it had to simplify is said, and the drawing carries on as it was."""
+        suggested = str(self.opened.path.with_name(self.opened.path.stem + " R12.dxf")) if self.opened.path else "Untitled R12.dxf"
+        path, _ = QFileDialog.getSaveFileName(self, "Export as DXF R12", suggested, "DXF file (*.dxf)")
+        if not path:
+            return False
+        if not Path(path).suffix:
+            path += ".dxf"
+        try:
+            notes = export_dxf(self.session.doc, path, VERSIONS["R12"])
+        except SaveError as exc:
+            QMessageBox.warning(self, "DraftWorx", str(exc))
+            return False
+        self._say(" ".join([f"Exported {Path(path).name}.", *notes]))
+        return True
 
     def _save_to(self, path: str | None, force: bool = False) -> bool:
         try:
@@ -496,7 +516,7 @@ class MainWindow(QMainWindow):
         if self.opened.path is not None:
             self.config.remember(str(self.opened.path))
             save_config(self.config)
-        self._say(f"Saved {self.opened.path.name}.")
+        self._say(" ".join([f"Saved {self.opened.path.name}.", *self.opened.notices]))
         return True
 
     def _autosave(self) -> None:

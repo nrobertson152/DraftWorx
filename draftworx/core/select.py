@@ -7,37 +7,61 @@ from typing import Iterator
 
 from .curves import Arc, Circle, EllipseArc, Line, Polyline, Spline
 from .model import Document, Entity, split_key
-from .shapes import AttDef, Insert, MText, Node, Solid, Text
+from .shapes import AttDef, Foreign, Insert, MText, Node, Solid, Text
 from .vec import IDENTITY, Affine, BBox, Vec, bbox_contains
 
 _CURVES = (Line, Arc, Circle, EllipseArc, Spline)
 PICK_REACH = 6.0        # pixels
+MOST_PIECES = 200_000   # blocks in blocks in arrays can multiply past anything a click could afford to look at
+_MOST_CELLS = 64        # of a block's array, when looking for text in it
 
 
-def curves_of(doc: Document, e: Entity, m: Affine = IDENTITY, _depth: int = 0) -> Iterator:
-    """Every curve an entity draws, in drawing coordinates, including inside blocks."""
+def _placed(c, m: Affine):
+    """A curve where a block's copy puts it, or None if that copy is scaled to nothing."""
+    if m is IDENTITY:
+        return c
+    try:
+        return c.transformed(m)
+    except (ValueError, ArithmeticError):
+        return None
+
+
+def curves_of(doc: Document, e: Entity, m: Affine = IDENTITY, _depth: int = 0, _left: list | None = None) -> Iterator:
+    """Every curve an entity draws, in drawing coordinates, including inside blocks. There's a limit to how many, shared by everything inside it."""
     s = e.shape
     k = type(s)
+    parts = ()
     if k in _CURVES:
-        yield s if m is IDENTITY else s.transformed(m)
+        parts = (s,)
     elif k is Polyline:
-        for seg in s.segments:
-            yield seg if m is IDENTITY else seg.transformed(m)
+        parts = s.segments
     elif k is Solid:
-        for seg in s.outline().segments:
-            yield seg if m is IDENTITY else seg.transformed(m)
-    elif k is Insert and _depth < 16:
+        parts = s.outline().segments
+    elif k is Foreign:
+        parts = [seg for c in s.curves for seg in (c.segments if type(c) is Polyline else (c,))]
+    for c in parts:
+        c = _placed(c, m)
+        if c is not None:
+            yield c
+    if k is Foreign and s.block:
+        k = Insert
+        s = Insert(s.block, s.at)
+    if k is Insert and _depth < 16:
         d = doc.blocks.get(s.block)
         if d is None:
             return
+        left = _left if _left is not None else [MOST_PIECES]
         for col in range(s.columns):
             for row in range(s.rows):
                 local = s.matrix(d.base, col, row)
                 full = local if m is IDENTITY else local.then(m)
                 for inner in d.entities:
+                    left[0] -= 1
+                    if left[0] < 0:
+                        return
                     if inner.style.layer != "0" and doc.is_hidden(inner.style):
                         continue
-                    yield from curves_of(doc, inner, full, _depth + 1)
+                    yield from curves_of(doc, inner, full, _depth + 1, left)
 
 
 def _text_box_distance(box: tuple[Vec, Vec, Vec], p) -> float:
@@ -88,6 +112,14 @@ def distance_to(doc: Document, e: Entity, p, _depth: int = 0) -> float:
         return math.hypot(q[0] - p[0], q[1] - p[1])
     if k is Insert:
         return _insert_distance(doc, s, p, _depth)
+    if k is Foreign:
+        best = math.inf
+        for c in s.curves:
+            q = c.project(p)[1]
+            best = min(best, math.hypot(q[0] - p[0], q[1] - p[1]))
+        if s.block:
+            best = min(best, _insert_distance(doc, Insert(s.block, s.at), p, _depth))
+        return best
     return math.inf
 
 
@@ -104,8 +136,8 @@ def _insert_distance(doc: Document, ins: Insert, p, depth: int) -> float:
     for a in ins.attribs:
         if not a.invisible:
             best = min(best, _text_box_distance(a.text.box(), p))
-    for col in range(ins.columns):
-        for row in range(ins.rows):
+    for col in range(min(ins.columns, _MOST_CELLS)):
+        for row in range(min(ins.rows, _MOST_CELLS)):
             m = ins.matrix(d.base, col, row)
             for inner in d.entities:
                 k = type(inner.shape)

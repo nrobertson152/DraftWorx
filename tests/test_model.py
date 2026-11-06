@@ -427,7 +427,9 @@ class EditMachine(RuleBasedStateMachine):
         eid = data.draw(st.sampled_from(sorted(self.doc.entities)))
         with self.doc.transaction("Change") as t:
             t.replace(eid, shape)
-        self._step()
+        # changing something to what it already is isn't a change, so it isn't a step to undo
+        if self.states[self.position] != self.doc.fingerprint():
+            self._step()
 
     @precondition(lambda self: self.doc.entities)
     @rule(data=st.data())

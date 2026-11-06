@@ -19,7 +19,7 @@ class Opened:
     doc: Document
     path: Path | None = None
     stamp: FileStamp | None = None
-    #: Things worth telling the person about what was read.
+    #: Things worth telling the person about what was read, or about the last save.
     notices: list[str] = field(default_factory=list)
 
 
@@ -42,23 +42,28 @@ def open_drawing(path: Path | str) -> Opened:
     p = Path(path)
     data = _read(p)
     if p.suffix.casefold() == ".dxf":
-        raise FormatError("DXF files can't be opened yet. That's the next piece of work.")
-    doc, notices = loads(data), []
+        from .dxf import read_dxf
+        doc, notices = read_dxf(data)
+    else:
+        doc, notices = loads(data), []
     doc.mark_saved()
     return Opened(doc, p, FileStamp.of_bytes(p, data), notices)
 
 
-def encode_for(doc: Document, path: Path) -> tuple[bytes, object]:
-    """The bytes for this file name, and the check that they read back as the same drawing."""
+def encode_for(doc: Document, path: Path, version: str | None = None) -> tuple[bytes, object, list[str]]:
+    """The bytes for this file name, the check that they read back as the same drawing, and what the person should know about them."""
     if path.suffix.casefold() == ".dxf":
-        raise SaveError("DXF files can't be saved yet. That's the next piece of work.")
+        from .dxf import check_written, encode_dxf
+        data, report = encode_dxf(doc, version)
+        return data, lambda back: check_written(back, doc, report), report.sentences()
     data = dumps(doc, PROGRAM)
     want = doc.fingerprint()
 
     def verify(back: bytes) -> None:
-        if loads(back).fingerprint() != want:
+        again = loads(back)
+        if again.fingerprint() != want or again.extras != doc.extras:
             raise ValueError("the file reads back as a different drawing")
-    return data, verify
+    return data, verify, []
 
 
 def save_drawing(opened: Opened, path: Path | str | None = None, force: bool = False, backup: bool = True) -> FileStamp:
@@ -70,9 +75,18 @@ def save_drawing(opened: Opened, path: Path | str | None = None, force: bool = F
     same_file = opened.path is not None and target == opened.path
     if same_file and not force and changed_since(target, opened.stamp):
         raise ChangedOnDisk(f"{target.name} has changed since you opened it, perhaps on another computer. Saving would overwrite that.")
-    data, verify = encode_for(opened.doc, target)
+    data, verify, notes = encode_for(opened.doc, target)
     stamp = write_verified(target, data, verify, backup=backup)
     opened.path = target
     opened.stamp = stamp
+    opened.notices = notes
     opened.doc.mark_saved()
     return stamp
+
+
+def export_dxf(doc: Document, path: Path | str, version: str) -> list[str]:
+    """Write a copy in a particular version of DXF, for something that needs that one. The drawing carries on being what it was, and it isn't marked as saved.
+    Returns what the person should know about what had to change. Raises SaveError."""
+    data, verify, notes = encode_for(doc, Path(path), version)
+    write_verified(Path(path), data, verify)
+    return notes

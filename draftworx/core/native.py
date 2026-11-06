@@ -8,14 +8,18 @@ from __future__ import annotations
 
 import json
 import math
+import re
+from dataclasses import replace
 from typing import Any
 
 from . import color as colors
 from .curves import Arc, Circle, EllipseArc, Line, Polyline, Spline
-from .model import MOST_SEGMENTS, BlockDef, DimStyle, Document, Entity, Layer, Linetype, Settings, Style, TextStyle
-from .shapes import AttDef, Attrib, Insert, MText, Node, Solid, Text
+from .model import MOST_SEGMENTS, BlockDef, DimStyle, Document, Entity, Layer, Linetype, Settings, Style, TextStyle, block_used_by
+from .rawsource import Raw
+from .shapes import AttDef, Attrib, Foreign, Insert, MText, Node, Solid, Text
 from .vec import TAU, Vec
 
+_LONE_SURROGATE = re.compile("[\ud800-\udfff]")
 FORMAT = "DraftWorx drawing"
 VERSION = 1
 MAX_ID = 1 << 39        # room for a sub-index under it in the spatial index, and more than any drawing will use
@@ -132,6 +136,15 @@ def encode_shape(s) -> dict:
             d["columns"], d["rows"] = s.columns, s.rows
             d["column_spacing"], d["row_spacing"] = float(s.column_spacing), float(s.row_spacing)
         return d
+    if k is Foreign:
+        d = {"type": "foreign", "dxf_type": s.dxf_type}
+        if s.block:
+            d["block"] = s.block
+        if s.at != (0.0, 0.0):
+            d["at"] = _pt(s.at)
+        if s.curves:
+            d["curves"] = [encode_shape(c) for c in s.curves]
+        return d
     raise TypeError(f"no file form for {k.__name__}")
 
 
@@ -155,15 +168,27 @@ def encode_entity(e: Entity) -> dict:
     encode_style(e.style, d)
     if e.order != e.id:
         d["order"] = e.order
-    if e.source is not None:
-        d["source"] = _encode_source(e.source)
+    src = e.source
+    if src is not None:
+        d["source"] = _encode_source(src, not isinstance(src, Raw) or (src.shape is not e.shape and src.shape != e.shape),
+                                     not isinstance(src, Raw) or (src.style is not e.style and src.style != e.style))
     return d
 
 
-def _encode_source(source):
-    if hasattr(source, "to_json"):
-        return source.to_json()
-    return source
+def _encode_source(source, reshaped: bool = False, restyled: bool = False):
+    """The file's own text, and whether the thing is still what it says. Without that, a changed object would come back from a file looking unchanged."""
+    if not isinstance(source, Raw):
+        return source
+    d = {"dxf": source.text}
+    if reshaped:
+        d["reshaped"] = True
+    if restyled:
+        d["restyled"] = True
+    return d
+
+
+def _encode_table_source(v) -> dict:
+    return _encode_source(v.source, isinstance(v.source, Raw) and v.source.shape != replace(v, source=None))
 
 
 def encode_layer(v: Layer) -> dict:
@@ -174,14 +199,14 @@ def encode_layer(v: Layer) -> dict:
     if v.description:
         d["description"] = v.description
     if v.source is not None:
-        d["source"] = _encode_source(v.source)
+        d["source"] = _encode_table_source(v)
     return d
 
 
 def encode_linetype(v: Linetype) -> dict:
     d: dict[str, Any] = {"name": v.name, "description": v.description, "pattern": [float(x) for x in v.pattern]}
     if v.source is not None:
-        d["source"] = _encode_source(v.source)
+        d["source"] = _encode_table_source(v)
     return d
 
 
@@ -189,7 +214,7 @@ def encode_text_style(v: TextStyle) -> dict:
     d: dict[str, Any] = {"name": v.name, "font": v.font, "height": float(v.height), "width_factor": float(v.width_factor),
                          "oblique": float(v.oblique)}
     if v.source is not None:
-        d["source"] = _encode_source(v.source)
+        d["source"] = _encode_table_source(v)
     return d
 
 
@@ -207,7 +232,7 @@ def encode_dim_style(v: DimStyle) -> dict:
         if getattr(v, f) != getattr(default, f):
             d[f] = getattr(v, f)
     if v.source is not None:
-        d["source"] = _encode_source(v.source)
+        d["source"] = _encode_table_source(v)
     return d
 
 
@@ -219,7 +244,7 @@ def encode_block(v: BlockDef) -> dict:
     if v.flags:
         d["flags"] = v.flags
     if v.source is not None:
-        d["source"] = _encode_source(v.source)
+        d["source"] = _encode_source(v.source, isinstance(v.source, Raw) and v.source.shape != replace(v, entities=(), source=None))
     return d
 
 
@@ -257,7 +282,12 @@ def dumps(doc: Document, program: str = "") -> bytes:
     for name in ("layers", "linetypes", "text_styles", "dim_styles", "blocks", "entities"):
         parts.append(section(name, state[name]))
     parts.append(f'"extras":{dump(doc.extras)}')
-    return (",\n".join(parts) + "}\n").encode("utf-8")
+    text = ",\n".join(parts) + "}\n"
+    try:
+        return text.encode("utf-8")
+    except UnicodeEncodeError:
+        # bytes from a DXF that didn't fit its encoding: JSON can spell them, and they come back as they were
+        return _LONE_SURROGATE.sub(lambda m: f"\\u{ord(m.group()):04x}", text).encode("utf-8")
 
 
 # ---------------------------------------------------------------------------------------------------- reading
@@ -402,6 +432,11 @@ def decode_shape(d: dict, ctx: str):
                           _num(d, "rotation", ctx, 0.0), tuple(_decode_attrib(a, ctx) for a in attribs),
                           _int(d, "columns", ctx, 1, 1, 100_000), _int(d, "rows", ctx, 1, 1, 100_000),
                           _num(d, "column_spacing", ctx, 0.0), _num(d, "row_spacing", ctx, 0.0))
+        if t == "foreign":
+            curves = d.get("curves", [])
+            if not isinstance(curves, list) or not all(isinstance(c, dict) and c.get("type") in ("line", "arc", "circle", "ellipse", "polyline", "spline") for c in curves):
+                raise FormatError(f"{ctx}: curves should be a list of curves.")
+            return Foreign(_str(d, "dxf_type", ctx), _str(d, "block", ctx, ""), _pt_of(d, "at", ctx) if "at" in d else Vec(0.0, 0.0), tuple(decode_shape(c, ctx) for c in curves))
     except (TypeError, ValueError) as exc:
         raise FormatError(f"{ctx}: {exc}") from exc
     raise FormatError(f"{ctx}: there's no object type called {t!r}. A newer DraftWorx may have written this file.")
@@ -474,18 +509,18 @@ def build(obj, source_reader=None) -> Document:
         ctx = f"Layer {item['name']}"
         if not colors.valid(item.get("color", 7)):
             raise FormatError(f"{ctx}: color is out of range.")
-        doc.layers._put(Layer(item["name"], item.get("color", 7), _str(item, "linetype", ctx, "Continuous"), _int(item, "weight", ctx, -3, -3, 211),
-                              _bool(item, "on", ctx, True), _bool(item, "frozen", ctx), _bool(item, "locked", ctx), _bool(item, "plot", ctx, True),
-                              _str(item, "description", ctx, ""), _source(item, source_reader)))
+        doc.layers._put(_sourced(Layer(item["name"], item.get("color", 7), _str(item, "linetype", ctx, "Continuous"), _int(item, "weight", ctx, -3, -3, 211),
+                                       _bool(item, "on", ctx, True), _bool(item, "frozen", ctx), _bool(item, "locked", ctx), _bool(item, "plot", ctx, True),
+                                       _str(item, "description", ctx, "")), item, source_reader))
     for item in _list(obj, "linetypes"):
         item = _named(item, "line type")
         ctx = f"Line type {item['name']}"
-        doc.linetypes._put(Linetype(item["name"], _str(item, "description", ctx, ""), _floats(item, "pattern", ctx), _source(item, source_reader)))
+        doc.linetypes._put(_sourced(Linetype(item["name"], _str(item, "description", ctx, ""), _floats(item, "pattern", ctx)), item, source_reader))
     for item in _list(obj, "text_styles"):
         item = _named(item, "text style")
         ctx = f"Text style {item['name']}"
-        doc.text_styles._put(TextStyle(item["name"], _str(item, "font", ctx, "Arial"), _num(item, "height", ctx, 0.0),
-                                       _num(item, "width_factor", ctx, 1.0), _num(item, "oblique", ctx, 0.0), _source(item, source_reader)))
+        doc.text_styles._put(_sourced(TextStyle(item["name"], _str(item, "font", ctx, "Arial"), _num(item, "height", ctx, 0.0),
+                                                _num(item, "width_factor", ctx, 1.0), _num(item, "oblique", ctx, 0.0)), item, source_reader))
     for item in _list(obj, "dim_styles"):
         item = _named(item, "dimension style")
         ctx = f"Dimension style {item['name']}"
@@ -502,7 +537,7 @@ def build(obj, source_reader=None) -> Document:
         for f in _DIM_BOOLS:
             if f in item:
                 kw[f] = _bool(item, f, ctx)
-        doc.dim_styles._put(DimStyle(item["name"], source=_source(item, source_reader), **kw))
+        doc.dim_styles._put(_sourced(DimStyle(item["name"], **kw), item, source_reader))
     seen: set[int] = set()
     interned: dict = {}
     for item in _list(obj, "blocks"):
@@ -512,10 +547,10 @@ def build(obj, source_reader=None) -> Document:
         if not isinstance(members, list):
             raise FormatError(f"{ctx}: entities should be a list.")
         entities = tuple(decode_entity(e, f"An object in block {item['name']}", seen, interned, source_reader) for e in members)
-        doc.blocks._put(BlockDef(item["name"], _pt_of(item, "base", ctx), entities, _str(item, "description", ctx, ""),
-                                 _int(item, "flags", ctx, 0), _source(item, source_reader)))
+        head = BlockDef(item["name"], _pt_of(item, "base", ctx), (), _str(item, "description", ctx, ""), _int(item, "flags", ctx, 0))
+        doc.blocks._put(replace(_sourced(head, item, source_reader), entities=entities))
     # references can run in any order, so cycles are looked for once every block is known
-    _check_block_cycles(doc)
+    check_block_cycles(doc)
     biggest = max(seen, default=0)
     for item in _list(obj, "entities"):
         e = decode_entity(item, "An object", seen, interned, source_reader)
@@ -525,7 +560,8 @@ def build(obj, source_reader=None) -> Document:
     doc._next_id = _int(obj, "next_id", "The file", biggest + 1, 1)
     if doc._next_id <= biggest:
         doc._next_id = biggest + 1
-    doc.extras = obj.get("extras") if isinstance(obj.get("extras"), dict) else {}
+    extras = obj.get("extras")
+    doc.extras = extras if isinstance(extras, dict) else {}
     c = obj.get("current", {})
     if isinstance(c, dict):
         ctx = "Current settings"
@@ -542,12 +578,14 @@ def build(obj, source_reader=None) -> Document:
     return doc
 
 
-def _source(item: dict, source_reader):
+def _sourced(value, item: dict, source_reader):
     src = item.get("source")
-    return source_reader(src, None, None) if src is not None and source_reader is not None else src
+    if src is None:
+        return value
+    return replace(value, source=source_reader(src, value, None) if source_reader is not None else src)
 
 
-def _check_block_cycles(doc: Document) -> None:
+def check_block_cycles(doc: Document) -> None:
     state: dict[str, int] = {}
 
     def visit(name: str, chain: list[str]) -> None:
@@ -561,14 +599,21 @@ def _check_block_cycles(doc: Document) -> None:
             return
         state[key] = 1
         for e in d.entities:
-            if type(e.shape) is Insert:
+            if block_used_by(e.shape):
                 visit(e.shape.block, chain + [d.name])
         state[key] = 2
     for b in doc.blocks:
         visit(b.name, [])
 
 
-def loads(data: bytes, source_reader=None) -> Document:
+def read_source(src, shape, style):
+    """What a file said beyond the model. It came from us, but it's checked like everything else."""
+    if isinstance(src, dict) and isinstance(src.get("dxf"), str):
+        return Raw(src["dxf"], None if src.get("reshaped") else shape, None if src.get("restyled") else style)
+    raise FormatError("What this file keeps from a DXF is damaged.")
+
+
+def loads(data: bytes, source_reader=read_source) -> Document:
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError as exc:

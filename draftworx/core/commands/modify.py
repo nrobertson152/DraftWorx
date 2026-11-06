@@ -5,6 +5,7 @@ from __future__ import annotations
 from . import command
 from ..grips import Grip, moved
 from ..session import ENTER, GetAngle, GetDistance, GetPoint, GetSelection, Keyword
+from ..shapes import Foreign
 from ..snap import Tracked
 from ..vec import Affine, Vec, near
 
@@ -22,18 +23,25 @@ def selected(s, verb: str):
 
 
 def apply_to_all(s, label: str, ids: list[int], m: Affine, copy: bool = False) -> list[int]:
-    """Move or copy these by one transform, as one undo step. Returns the copies' ids."""
+    """Move or copy these by one transform, as one undo step. Returns the copies' ids. What can't be changed here stays, and the person is told."""
     made: list[int] = []
+    stayed = 0
     with s.doc.transaction(label) as t:
         for i in ids:
             e = s.doc.entities.get(i)
             if e is None:
+                continue
+            if type(e.shape) is Foreign:
+                stayed += 1
                 continue
             shape = e.shape.transformed(m)
             if copy:
                 made.append(t.add(shape, e.style))
             else:
                 t.replace(i, shape)
+    if stayed:
+        s.message = (f"{stayed} object{'s' if stayed != 1 else ''} from the file didn't {'copy' if copy else 'change'}: "
+                     f"{'they' if stayed != 1 else 'it'} can only be erased or restyled here so far.")
     return made
 
 
@@ -42,7 +50,7 @@ def ghosts_of(s, ids: list[int], m: Affine, limit: int = 2000) -> list:
     out = []
     for i in ids[:limit]:
         e = s.doc.entities.get(i)
-        if e is not None:
+        if e is not None and type(e.shape) is not Foreign:
             out.append(e.shape.transformed(m))
     return out
 
