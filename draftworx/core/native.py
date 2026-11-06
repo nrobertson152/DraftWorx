@@ -16,12 +16,12 @@ from . import color as colors
 from .curves import Arc, Circle, EllipseArc, Line, Polyline, Spline
 from .model import MOST_SEGMENTS, BlockDef, DimStyle, Document, Entity, Layer, Linetype, Settings, Style, TextStyle, block_used_by
 from .rawsource import Raw
-from .shapes import MEASURES, AttDef, Attrib, Dimension, Foreign, Insert, MText, Node, Solid, Text
+from .shapes import MEASURES, AttDef, Attrib, Dimension, Foreign, Hatch, Insert, MText, Node, PatternLine, Solid, Text
 from .vec import TAU, Vec
 
 _LONE_SURROGATE = re.compile("[\ud800-\udfff]")
 FORMAT = "DraftWorx drawing"
-VERSION = 2             # the newest this reads. A drawing is written with the oldest version that can hold it (see `version_needed`).
+VERSION = 3             # the newest this reads. A drawing is written with the oldest version that can hold it (see `version_needed`).
 MAX_ID = 1 << 39        # room for a sub-index under it in the spatial index, and more than any drawing will use
 
 
@@ -153,6 +153,21 @@ def encode_shape(s) -> dict:
         if s.block:
             d["block"] = s.block
         return d
+    if k is Hatch:
+        d = {"type": "hatch", "loops": [[encode_shape(c) for c in loop] for loop in s.loops], "pattern": s.pattern}
+        if s.scale != 1.0:
+            d["scale"] = float(s.scale)
+        if s.angle:
+            d["angle"] = float(s.angle)
+        if s.origin != (0.0, 0.0):
+            d["origin"] = _pt(s.origin)
+        if s.seeds:
+            d["seeds"] = [_pt(p) for p in s.seeds]
+        if s.refs:
+            d["refs"] = list(s.refs)
+        if s.lines:
+            d["lines"] = [[float(pl.angle), _pt(pl.base), float(pl.along), float(pl.across), [float(x) for x in pl.dashes]] for pl in s.lines]
+        return d
     if k is Foreign:
         d = {"type": "foreign", "dxf_type": s.dxf_type}
         if s.block:
@@ -283,9 +298,10 @@ def canonical_state(doc: Document) -> dict:
 
 
 def version_needed(doc: Document) -> int:
-    """The oldest format version that holds this drawing, so a drawing without anything newer still opens in an older DraftWorx. Version 2 added dimensions."""
-    shapes = [e.shape for e in doc.entities.values()] + [e.shape for b in doc.blocks for e in b.entities]
-    return 2 if any(type(x) is Dimension for x in shapes) else 1
+    """The oldest format version that holds this drawing, so a drawing without anything newer still opens in an older DraftWorx. Version 2
+    added dimensions and version 3 hatches."""
+    kinds = {type(e.shape) for e in doc.entities.values()} | {type(e.shape) for b in doc.blocks for e in b.entities}
+    return 3 if Hatch in kinds else 2 if Dimension in kinds else 1
 
 
 def dumps(doc: Document, program: str = "") -> bytes:
@@ -466,6 +482,8 @@ def decode_shape(d: dict, ctx: str):
             return Dimension(measure, _points(d, "pts", ctx, 2), _pt_of(d, "at", ctx), _num(d, "angle", ctx, 0.0), _str(d, "text", ctx, ""),
                              _str(d, "style", ctx, "Standard"), _num(d, "scale", ctx, 1.0), _pt_of(d, "text_at", ctx) if "text_at" in d else None,
                              tuple((r[0], r[1]) if r is not None else None for r in refs), _str(d, "block", ctx, ""))
+        if t == "hatch":
+            return _decode_hatch(d, ctx)
         if t == "foreign":
             curves = d.get("curves", [])
             if not isinstance(curves, list) or not all(isinstance(c, dict) and c.get("type") in ("line", "arc", "circle", "ellipse", "polyline", "spline") for c in curves):
@@ -474,6 +492,29 @@ def decode_shape(d: dict, ctx: str):
     except (TypeError, ValueError) as exc:
         raise FormatError(f"{ctx}: {exc}") from exc
     raise FormatError(f"{ctx}: there's no object type called {t!r}. A newer DraftWorx may have written this file.")
+
+
+_EDGES = ("line", "arc", "circle", "ellipse", "spline")
+
+
+def _decode_hatch(d: dict, ctx: str) -> Hatch:
+    loops = d.get("loops")
+    if not isinstance(loops, list) or not loops or not all(isinstance(loop, list) and loop and all(isinstance(c, dict) and c.get("type") in _EDGES for c in loop)
+                                                          for loop in loops):
+        raise FormatError(f"{ctx}: a hatch's loops should be lists of lines, arcs, circles, ellipses and splines.")
+    refs = d.get("refs", [])
+    if not isinstance(refs, list) or not all(isinstance(r, int) and not isinstance(r, bool) and 0 < r <= MAX_ID for r in refs):
+        raise FormatError(f"{ctx}: refs should be a list of object ids.")
+    lines = d.get("lines", [])
+    if not isinstance(lines, list) or not all(isinstance(x, list) and len(x) == 5 and isinstance(x[4], list) for x in lines):
+        raise FormatError(f"{ctx}: a pattern's lines should each be [angle, base, along, across, dashes].")
+    pattern_lines = []
+    for x in lines:
+        values = _floats({"lines": [x[0], x[2], x[3], *x[4]]}, "lines", ctx)
+        pattern_lines.append(PatternLine(values[0], _vec(x[1], ctx, "base"), values[1], values[2], values[3:]))
+    return Hatch(tuple(tuple(decode_shape(c, ctx) for c in loop) for loop in loops), _str(d, "pattern", ctx, "SOLID"), _num(d, "scale", ctx, 1.0),
+                 _num(d, "angle", ctx, 0.0), _pt_of(d, "origin", ctx) if "origin" in d else Vec(0.0, 0.0),
+                 _points(d, "seeds", ctx) if "seeds" in d else (), tuple(refs), tuple(pattern_lines))
 
 
 def _decode_style(d: dict, ctx: str, interned: dict) -> Style:
@@ -592,11 +633,13 @@ def build(obj, source_reader=None) -> Document:
         if e.id > biggest:
             biggest = e.id
     for e in list(doc.entities.values()):
-        # a dimension can only be attached to something in the same drawing
+        # a dimension or hatch can only be attached to something in the same drawing
         s = e.shape
         if type(s) is Dimension and s.refs and any(r is not None and r[0] not in doc.entities for r in s.refs):
             refs = tuple(r if r is not None and r[0] in doc.entities else None for r in s.refs)
             doc._set("entity", e.id, e, replace(e, shape=replace(s, refs=refs if any(r is not None for r in refs) else ())))
+        elif type(s) is Hatch and s.refs and any(r not in doc.entities or r == e.id for r in s.refs):
+            doc._set("entity", e.id, e, replace(e, shape=replace(s, refs=tuple(r for r in s.refs if r in doc.entities and r != e.id))))
     doc._next_id = _int(obj, "next_id", "The file", biggest + 1, 1)
     if doc._next_id <= biggest:
         doc._next_id = biggest + 1

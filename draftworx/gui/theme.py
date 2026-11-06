@@ -68,6 +68,13 @@ def _mix(a: str, b: str, t: float) -> str:
                   int(ca.blue() + (cb.blue() - ca.blue()) * t)).name()
 
 
+def translucent(color: str, alpha: float) -> QColor:
+    """A theme colour let through to what's underneath: what an area about to be filled is shown in."""
+    c = QColor(color)
+    c.setAlphaF(alpha)
+    return c
+
+
 def contrast(a: str, b: str) -> float:
     """WCAG contrast ratio of two #rrggbb colours."""
     def lum(c):

@@ -18,7 +18,8 @@ from ..curves import Arc, Circle, EllipseArc, Line, Polyline, Spline
 from ..model import BYBLOCK_TYPE, WEIGHT_BYBLOCK, BlockDef, DimStyle, Document, Entity, Layer, Linetype, Style, TextStyle, block_used_by
 from ..rawsource import Raw
 from ..safefile import SaveError
-from ..shapes import AttDef, Attrib, Dimension, Foreign, Insert, MText, Node, Solid, Text, plain_mtext, text_width
+from .. import hatch as hatches
+from ..shapes import AttDef, Attrib, Dimension, Foreign, Hatch, Insert, MText, Node, Solid, Text, plain_mtext, text_width
 from ..vec import Vec
 from .tags import code_line, codec_for, encode_text, fmt_float, header_state, inum, pairs, retag
 
@@ -900,6 +901,11 @@ class _Writer:
                 o.tag(74, s.attrib.text.valign)
         elif k is Dimension:
             tail = self._dimension(e, owner)
+        elif k is Hatch:
+            if self.version < "AC1014":
+                self._hatch_as_drawn(e, owner)
+                return
+            tail = self._hatch(e, owner)
         elif k is Insert:
             tail = self._begin("INSERT", e, owner)
             sub("AcDbMInsertBlock" if s.columns > 1 or s.rows > 1 else "AcDbBlockReference")
@@ -991,6 +997,133 @@ class _Writer:
             own = style.scale if style.scale > 0.0 else 1.0
             tail = ["1001", "ACAD", "1000", "DSTYLE", "1002", "{", "1070", "40", "1040", fmt_float(own * d.scale), "1002", "}"] + tail
         return tail
+
+    def _hatch(self, e: Entity, owner: str) -> list[str]:
+        """A HATCH: its loops as boundary paths, its pattern's lines as they fall in the drawing, and the points it was made from. What it's
+        attached to isn't written, as for a dimension, so another program sees a hatch that doesn't follow anything."""
+        o = self.out
+        h = e.shape
+        tail = self._begin("HATCH", e, owner)
+        self._sub("AcDbHatch")
+        o.pt(10, Vec(0.0, 0.0))
+        o.tag(210, 0.0)
+        o.tag(220, 0.0)
+        o.tag(230, 1.0)
+        o.tag(2, "SOLID" if h.solid else self.name(h.pattern))
+        o.tag(70, 1 if h.solid else 0)
+        o.tag(71, 0)
+        o.tag(91, len(h.loops))
+        outside = hatches.outermost(h)
+        for loop, out in zip(h.loops, outside):
+            flags = 1 if out else 0
+            if all(type(c) is Line or type(c) is Arc for c in loop) and not (len(loop) == 1 and type(loop[0]) is Arc):
+                bulges = [0.0 if type(c) is Line else math.tan(c.sweep / 4.0) for c in loop]
+                o.tag(92, flags | 2)
+                o.tag(72, 1 if any(bulges) else 0)
+                o.tag(73, 1)
+                o.tag(93, len(loop))
+                for c, b in zip(loop, bulges):
+                    o.tag(10, float(c.start[0]))
+                    o.tag(20, float(c.start[1]))
+                    if any(bulges):
+                        o.tag(42, b)
+            else:
+                o.tag(92, flags)
+                o.tag(93, len(loop))
+                for c in loop:
+                    self._edge(c)
+            o.tag(97, 0)
+        o.tag(75, 0)
+        o.tag(76, 1 if h.solid or hatches.known(h.pattern) else 2)
+        if not h.solid:
+            o.tag(52, math.degrees(h.angle) % 360.0)
+            o.tag(41, float(h.scale))
+            o.tag(77, 0)
+            lines = hatches.world_lines(h)
+            o.tag(78, len(lines))
+            for angle, base, step, dashes in lines:
+                o.tag(53, math.degrees(angle) % 360.0)
+                o.tag(43, float(base[0]))
+                o.tag(44, float(base[1]))
+                o.tag(45, float(step[0]))
+                o.tag(46, float(step[1]))
+                o.tag(79, len(dashes))
+                for d in dashes:
+                    o.tag(49, float(d))
+        o.tag(98, len(h.seeds))
+        for p in h.seeds:
+            o.tag(10, float(p[0]))
+            o.tag(20, float(p[1]))
+        return tail
+
+    def _edge(self, c) -> None:
+        """One edge of a hatch's boundary path. A clockwise arc's angles are written as a file has them: the other way round, from 360."""
+        o = self.out
+        k = type(c)
+        if k is Line:
+            o.tag(72, 1)
+            o.tag(10, float(c.a[0]))
+            o.tag(20, float(c.a[1]))
+            o.tag(11, float(c.b[0]))
+            o.tag(21, float(c.b[1]))
+        elif k is Arc or k is Circle:
+            a = c.as_arc() if k is Circle else c
+            o.tag(72, 2)
+            o.tag(10, float(a.c[0]))
+            o.tag(20, float(a.c[1]))
+            o.tag(40, float(a.r))
+            self._edge_angles(a.start_angle, a.sweep)
+        elif k is EllipseArc:
+            o.tag(72, 3)
+            o.tag(10, float(c.c[0]))
+            o.tag(20, float(c.c[1]))
+            o.tag(11, float(c.major[0]))
+            o.tag(21, float(c.major[1]))
+            o.tag(40, float(c.ratio))
+            self._edge_angles(c.start_param, c.sweep)
+        elif k is Spline:
+            o.tag(72, 4)
+            o.tag(94, c.degree)
+            o.tag(73, 1 if c.weights else 0)
+            o.tag(74, 1 if c.periodic else 0)
+            o.tag(95, len(c.knots))
+            o.tag(96, len(c.ctrl))
+            for u in c.knots:
+                o.tag(40, float(u))
+            for i, p in enumerate(c.ctrl):
+                o.tag(10, float(p[0]))
+                o.tag(20, float(p[1]))
+                if c.weights:
+                    o.tag(42, float(c.weights[i]))
+            if self.version >= "AC1024":
+                o.tag(97, 0)
+        else:
+            raise TypeError(f"no hatch edge for {k.__name__}")
+
+    def _edge_angles(self, start: float, sweep: float) -> None:
+        """An arc's angles in a hatch's path, in degrees. A clockwise one is written from 360 down, which is how readers know it runs that way."""
+        o = self.out
+        s0 = math.degrees(start) % 360.0
+        if sweep < 0.0:
+            s0 = (360.0 - s0) % 360.0
+        span = abs(math.degrees(sweep))
+        end = s0 + span
+        if span < 360.0 - 1e-9:
+            end %= 360.0
+        o.tag(50, s0)
+        o.tag(51, end)
+        o.tag(73, 0 if sweep < 0.0 else 1)
+
+    def _hatch_as_drawn(self, e: Entity, owner: str) -> None:
+        """A hatch for a file that can't hold one: its pattern's lines, or its fill as solids."""
+        h = e.shape
+        try:
+            drawn = hatches.trapezoids(h) if h.solid else list(hatches.pieces(h))
+        except hatches.TooDense:
+            drawn = [c for loop in h.loops for c in loop]
+        self.report.converted["hatches, as the lines and solids they draw"] += 1
+        for piece in drawn:
+            self._fresh(Entity(e.id, piece, e.style, e.order), owner)
 
     def _ellipse(self, e: Entity, owner: str) -> list[str]:
         o = self.out

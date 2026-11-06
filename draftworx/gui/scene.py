@@ -18,7 +18,8 @@ from ..core.curves import Arc, Circle, EllipseArc, Line, Polyline, Spline
 from ..core.model import BYBLOCK_TYPE, BYLAYER_TYPE, WEIGHT_BYBLOCK, WEIGHT_BYLAYER, WEIGHT_DEFAULT, Document, Entity, Style
 from ..core.ops.reshape import inside
 from ..core import dim as dims
-from ..core.shapes import AttDef, Dimension, Foreign, Insert, MText, Node, Solid, Text
+from ..core import hatch as hatches
+from ..core.shapes import AttDef, Dimension, Foreign, Hatch, Insert, MText, Node, Solid, Text
 from ..core.vec import IDENTITY, Affine, BBox, Vec, bbox_union
 
 CHUNK = 2000            # things to a chunk: small enough that an edit is quick, big enough that culling stays cheap
@@ -32,11 +33,22 @@ _FONT_ALIASES = {"txt": "", "simplex": "", "romans": "", "romanc": "", "isocp": 
 
 @dataclass(frozen=True, slots=True)
 class _Look:
-    """How something's drawn: `rgb` of -1 means ink, the paper's opposite, like DXF's colour 7."""
+    """How something's drawn: `rgb` of -1 means ink, the paper's opposite, like DXF's colour 7. `under` is drawn before everything else, as a
+    hatch's fill is, so it never hides the lines round it."""
     rgb: int
     pattern: tuple[float, ...]
     weight: int
     fill: bool = False
+    under: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class _Fill:
+    """A hatch's solid fill, its loops turned so the non-zero rule fills exactly what's inside it."""
+    loops: tuple[tuple, ...]
+
+    def transformed(self, m: Affine) -> "_Fill":
+        return _Fill(tuple(tuple(c.transformed(m) for c in loop) for loop in self.loops))
 
 
 class _Chunk:
@@ -309,6 +321,19 @@ class Scene:
             if s.block:
                 self._walk(Insert(s.block, s.at), style, parent, m, out, depth)
             return
+        if k is Hatch:
+            look = self.look_of(effective)
+            if s.solid:
+                out.setdefault(_Look(look.rgb, (), 0, True, True), []).append((_Fill(hatches.fill_loops(s)), m))
+                return
+            try:
+                drawn = hatches.pieces(s)
+            except hatches.TooDense:
+                drawn = tuple(c for loop in s.loops for c in loop)     # too fine to draw: its outline says where it is
+            plain = _Look(look.rgb, (), look.weight)
+            out.setdefault(plain, []).extend((piece, m) for piece in drawn)
+            self._left -= len(drawn)
+            return
         if k is Dimension:
             if s.block and self.doc.blocks.get(s.block) is not None:
                 self._walk(Insert(s.block, Vec(0.0, 0.0)), style, parent, m, out, depth)     # as the file drew it, while it's unchanged
@@ -381,6 +406,12 @@ class Scene:
         moved = m is not IDENTITY
         if k is _Wide:
             path.addPath(wide_path((s.transformed(m) if moved else s).line))
+        elif k is _Fill:
+            for loop in (s.transformed(m) if moved else s).loops:
+                loop[0].emit(path, True)
+                for c in loop[1:]:
+                    c.emit(path, False)
+                path.closeSubpath()
         elif k is Line and crisp is not None:
             q = s.transformed(m) if moved else s
             _segment(q.a, q.b, path, crisp)
@@ -418,7 +449,7 @@ class Scene:
         p.setTransform(QTransform(m11, m12, m21, m22, dx, dy))
         x0, y0, x1, y1 = view.visible(4.0)
         scale = view.scale
-        for look, group in self.chunks.items():
+        for look, group in sorted(self.chunks.items(), key=lambda kv: not kv[0].under):
             if look.fill:
                 p.setPen(Qt.PenStyle.NoPen)
                 p.setBrush(QBrush(self.color_for(look.rgb)))
@@ -470,6 +501,13 @@ class Scene:
             return known[1]
         path = self.shape_path(e.shape, e.style)
         self._paths[eid] = (e, path)
+        return path
+
+    def area_path(self, h: Hatch) -> QPainterPath:
+        """The area a hatch covers, to fill."""
+        path = QPainterPath()
+        path.setFillRule(Qt.FillRule.WindingFill)
+        self._emit(_Fill(hatches.fill_loops(h)), path, [], IDENTITY)
         return path
 
     def shape_path(self, s, style: Style | None = None) -> QPainterPath:

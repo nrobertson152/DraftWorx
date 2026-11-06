@@ -46,9 +46,12 @@ Every object has `id` and `type`. These are optional and default as shown: `laye
 | `attdef` | the fields of `text`, plus `tag`, optionally `prompt`, `invisible`, `constant` |
 | `insert` | `block`, `p`, optionally `sx`, `sy`, `rotation`, `attribs` (like `attdef`), `columns`, `rows`, `column_spacing`, `row_spacing` |
 | `dimension` | `measure` (`linear`, `aligned`, `radius`, `diameter` or `angular`), `pts`, `at`, optionally `angle` (radians: what a linear one measures along), `text` (`<>` is the measurement), `style`, `scale`, `text_at`, `refs`, `block`. See below |
+| `hatch` | `loops` (each a list of `line`, `arc`, `circle`, `ellipse` and `spline` objects, end to end), `pattern` (`SOLID` or a pattern's name), optionally `scale`, `angle` (radians), `origin`, `seeds`, `refs`, `lines`. See below |
 | `foreign` | `dxf_type`, optionally `block` and `at` (a block that draws it, and where), and `curves` (lines, arcs, circles, ellipses, polylines or splines to show for it). Something from a DXF that can't be changed here, whose `source` holds what it really is |
 
 **Dimensions** hold what they measure, not what they draw, which is worked out from these and the style. `pts` is two points for `linear` and `aligned`; the centre and a point on the curve for `radius` and `diameter`; and for `angular`, the ends of its two lines (four points), or its vertex and a point on each arm (three). `at` is a point on the dimension line or its arc, or where a radius or diameter's text goes. `refs` has one entry per point: `[id, "which"]` for the object it's attached to and which of its points (`start`, `end`, `mid`, `center`, `point`, `vertex:n`, `mid:n`, or `on` for a point on a circle or arc), or `null`. Something it names that isn't in the file is let go of on reading. `block` is a block from a DXF that drew it there, used while it's unchanged.
+
+**Hatches** fill what's inside an odd number of their `loops`. A pattern's sizes are millimetres on the sheet, multiplied by `scale`, turned by `angle` and started from `origin`. `lines` is the pattern's own definition when it isn't one the program knows, as from a DXF: one `[angle, [x, y], along, across, [dashes]]` per family of lines, as a pattern file has it. `seeds` are the points it was made from, and `refs` the ids of the objects round it that it follows. Something it names that isn't in the file is let go of on reading.
 
 **Colours** are one integer: 1 to 255 is a colour index, 256 ByLayer, 0 ByBlock, and `16777216 + 0xRRGGBB` a true colour. **Weights** are in hundredths of a millimetre, or -1 ByLayer, -2 ByBlock, -3 default.
 
@@ -61,3 +64,5 @@ Every object has `id` and `type`. These are optional and default as shown: `laye
 **1** First version. The format can gain object types and optional fields without changing version while there's no release, because old files stay readable. After a release, anything an older reader would misread needs a new version and a test that old files still open.
 
 **2** Adds `dimension`. A drawing without one is still written as version 1.
+
+**3** Adds `hatch`. A drawing without one is written as version 2 if it has dimensions, and otherwise as version 1.

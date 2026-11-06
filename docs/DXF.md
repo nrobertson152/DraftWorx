@@ -33,7 +33,7 @@ R12 to 2018, text and binary. Files from before R12 and after 2018 are read too,
 | INSERT, BLOCK | Blocks, nested and in arrays, stretched and mirrored |
 | DIMENSION | A dimension that can be changed: linear, aligned, radius, diameter and angular. Until it's changed, it's drawn by the block the file holds for it, as the program that wrote it drew it. Ordinate dimensions, tilted ones, and ones placed away from their block stay as the file had them |
 | ACAD_TABLE, ARC_DIMENSION, LARGE_RADIAL_DIMENSION | Shown through the block the file holds for them. Can't be changed |
-| HATCH | Shown by its boundaries, not its fill. Can't be changed yet |
+| HATCH | A hatch that can be changed: its boundary paths, and its pattern as the file defines it. A gradient fill stays as the file had it and is shown by its outline. What it was associated with in the file isn't read |
 | LEADER, 3DFACE, IMAGE, WIPEOUT, MLINE | Shown by their outlines. Can't be changed |
 | Anything else: XLINE, RAY, MULTILEADER, 3DSOLID, REGION, MESH, proxies... | Not shown. Kept |
 | Something tilted out of the plane | Not shown. Kept |
@@ -58,6 +58,8 @@ A drawing that didn't come from a DXF is written as **2013** (`AC1027`), with wh
 
 A **dimension** is written as a DIMENSION, with a block of its own that draws it, as a program that doesn't work out dimensions itself needs. Its own size goes where AutoCAD keeps one, as an override of its style's DIMSCALE. Ø, ° and ± are written %%c, %%d and %%p, which every reader understands whatever its fonts. A dimension from a file that's been changed gets a new block, and the one it had stays in the file.
 
+A **hatch** is written as a HATCH with its loops as boundary paths (polyline paths where they're straight and circular, edges otherwise), its pattern's lines as they fall in the drawing, which is what every reader draws, and the points it was made from. **Export as R12**, which has no hatches, writes the pattern's lines, or a solid fill as four-sided solids, and says so.
+
 A name a reader would refuse (`/ \ : ; * ? " < > | , = `` ` ``) gets `_` in its place. R12 names are also upper case. A line of plain text longer than the file's version can hold (255 characters before 2007, 2049 after) stops the save with a message rather than being cut short.
 
 ## How it's checked
@@ -80,6 +82,7 @@ In CI (`tests/test_dxf.py`, `tests/test_dxf_readers.py`):
 
 - **A reference to something erased.** Erasing an object that a group or another object refers to by handle leaves that reference pointing at nothing. Readers usually cope, and AutoCAD's audit repairs it. We don't follow those references.
 - **A renamed layer used in paper space.** Paper space is kept as text, so what's there still names the old layer.
+- **What a hatch follows isn't written to DXF either.** In another program it's a hatch that stays where it is. AutoCAD keeps that association with handles in the objects round it, and the file this program writes has none.
 - **What a dimension is attached to isn't written to DXF.** A dimension drawn here follows what it measures, in this program and in a `.draftworx` file. In a DXF it's a dimension that measures from where those points were, so after reopening it no longer follows them. Dimensions from a file arrive unattached for the same reason: AutoCAD keeps that in objects this program doesn't read.
 - **Other programs may draw a dimension their own way.** LibreCAD works out dimensions itself from the points they measure rather than using the block that draws them, so its arrows, text and rounding follow its own settings.
 - **A damaged file that a repair tool would accept** may be refused here. Rather than guess, we say what's wrong and where. A cut-off file is refused unless every section in it is complete, and then we say so.

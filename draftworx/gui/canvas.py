@@ -14,9 +14,11 @@ from PySide6.QtWidgets import QWidget
 
 from ..core.commands import search
 from ..core.session import GetPick, GetPoint, Session
+from ..core.shapes import Hatch
 from ..core.snap import REAL, Guide, Kind
 from ..core.units import format_length
 from ..core.view import View
+from . import theme as themes
 from .scene import Scene
 
 _KEYS = {Qt.Key.Key_Return: "enter", Qt.Key.Key_Enter: "enter", Qt.Key.Key_Escape: "escape", Qt.Key.Key_Space: "space",
@@ -366,6 +368,9 @@ class Canvas(QWidget):
             pen.setWidthF(width)
             p.setPen(pen)
             for shape in shapes:
+                if type(shape) is Hatch:
+                    # the area it would fill, lightly, so what's under it still shows
+                    p.fillPath(self.scene.area_path(shape), QBrush(themes.translucent(self.theme.canvas[token], 0.18)))
                 p.drawPath(self.scene.shape_path(shape))
         p.resetTransform()
 

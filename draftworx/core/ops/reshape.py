@@ -9,7 +9,7 @@ from .. import color as colors
 from .. import dim as dims
 from ..curves import Arc, Circle, EllipseArc, Line, Polyline, Spline, bulge_arc
 from ..model import BYBLOCK_TYPE, WEIGHT_BYBLOCK, Document, Style
-from ..shapes import AttDef, Dimension, Foreign, Insert, MText, Node, Solid, Text, plain_mtext
+from ..shapes import AttDef, Dimension, Foreign, Hatch, Insert, MText, Node, Solid, Text, plain_mtext
 from ..vec import Affine, Vec, tol
 
 # ----------------------------------------------------------------------------------------------------- joining
@@ -148,6 +148,14 @@ def explode_shape(doc: Document, s, style: Style) -> list[tuple[object, Style]]:
         if s.block and doc.blocks.get(s.block) is not None:
             return _insert_parts(doc, Insert(s.block, Vec(0.0, 0.0)), style)
         return [(piece, style) for piece in dims.drawn(s, doc.dim_style_of(s))]
+    if k is Hatch:
+        from ..hatch import TooDense, pieces
+        if s.solid:
+            return [(c, style) for loop in s.loops for c in loop]      # a fill comes apart into its outline
+        try:
+            return [(piece, style) for piece in pieces(s)]
+        except TooDense as exc:
+            raise ValueError(str(exc)) from exc
     if k is Foreign:
         out: list[tuple[object, Style]] = [(c, style) for c in s.curves]
         if s.block:

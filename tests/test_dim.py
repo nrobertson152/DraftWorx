@@ -533,6 +533,20 @@ class TestTheDimensionTool:
             (d,) = dimension_shapes(p)
             assert d.scale == 50.0
 
+    def test_copied_with_what_it_measures_it_follows_the_copy(self):
+        with Person(line(0, 0, 100, 0)) as p:
+            p.run("DIM").click(30, 0).click(30, 15).enter()
+            p.s.set_selection(list(p.doc.entities))
+            p.run("COPY").click(0, 0).type("@0,100").enter().enter()
+            line_copy = max(i for i, e in p.doc.entities.items() if type(e.shape) is Line)
+            dim_copy = max(i for i, e in p.doc.entities.items() if type(e.shape) is Dimension)
+            assert {r[0] for r in p.doc.entities[dim_copy].shape.refs} == {line_copy}
+            with p.doc.transaction("Longer") as t:
+                t.replace(line_copy, line(0, 100, 90, 100))
+            assert dims.measurement(p.doc.entities[dim_copy].shape) == pytest.approx(90.0)
+            original = next(e.shape for i, e in p.doc.entities.items() if type(e.shape) is Dimension and i != dim_copy)
+            assert dims.measurement(original) == pytest.approx(100.0)
+
     def test_one_undo_takes_it_away(self):
         with Person(line(0, 0, 100, 0), px=0.1) as p:
             p.run("DIM").click(30, 0).click(30, 15).enter()

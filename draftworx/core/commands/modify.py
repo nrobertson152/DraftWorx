@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from . import command
 from ..grips import Grip, moved
+from ..model import with_refs_moved
 from ..session import ENTER, GetAngle, GetDistance, GetPoint, GetSelection, Keyword
 from ..shapes import Foreign
 from ..snap import Tracked
@@ -27,6 +28,7 @@ def apply_to_all(s, label: str, ids: list[int], m: Affine, copy: bool = False) -
     made: list[int] = []
     stayed = 0
     with s.doc.transaction(label) as t:
+        copies: dict[int, int] = {}
         for i in ids:
             e = s.doc.entities.get(i)
             if e is None:
@@ -36,13 +38,24 @@ def apply_to_all(s, label: str, ids: list[int], m: Affine, copy: bool = False) -
                 continue
             shape = e.shape.transformed(m)
             if copy:
-                made.append(t.add(shape, e.style))
+                copies[i] = t.add(shape, e.style)
+                made.append(copies[i])
             else:
                 t.replace(i, shape)
+        attach_copies(t, copies)
     if stayed:
         s.message = (f"{stayed} object{'s' if stayed != 1 else ''} from the file didn't {'copy' if copy else 'change'}: "
                      f"{'they' if stayed != 1 else 'it'} can only be erased or restyled here so far.")
     return made
+
+
+def attach_copies(t, copies: dict[int, int]) -> None:
+    """Copies of dimensions and hatches copied with what they're attached to are attached to the copies, so they follow those."""
+    for new in copies.values():
+        e = t.doc.entities.get(new)
+        moved = with_refs_moved(e.shape, copies) if e is not None else None
+        if moved is not None:
+            t.replace(new, moved)
 
 
 def ghosts_of(s, ids: list[int], m: Affine, limit: int = 2000) -> list:

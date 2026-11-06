@@ -18,7 +18,7 @@ from draftworx.core.config import Config  # noqa: E402
 from draftworx.core.curves import Circle, Line, Polyline  # noqa: E402
 from draftworx.core.files import open_drawing  # noqa: E402
 from draftworx.core.model import BlockDef, Entity, Layer, Linetype, Style  # noqa: E402
-from draftworx.core.shapes import Dimension, Insert, Solid, Text  # noqa: E402
+from draftworx.core.shapes import Dimension, Hatch, Insert, Solid, Text  # noqa: E402
 from draftworx.core.vec import Vec  # noqa: E402
 from draftworx.gui import theme as themes  # noqa: E402
 from draftworx.gui.palette import Entry, Palette  # noqa: E402
@@ -139,6 +139,21 @@ class TestChanging:
         ink = hand.w.theme.canvas["ink"]
         assert hand.has_color_near(100, 80, ink)                     # the dimension line
         assert hand.has_color_near(100, 80 + 0.625 + 1.25, ink, 4)   # its text, just above it
+
+    def test_a_hatch_by_pointing_is_shown_then_filled_under_what_crosses_it(self, hand):
+        add(hand, line(20, 20, 180, 20), line(180, 20, 180, 120), line(180, 120, 20, 120), line(20, 120, 20, 20))
+        add(hand, line(60, 40, 140, 40))       # drawn inside, and over the fill
+        hand.s.run("HATCH")
+        hand.type("SOLID").enter()
+        hand.move(100, 80)
+        assert hand.s.ghosts and type(hand.s.ghosts[0]) is Hatch
+        tint, paper = hand.pixel(70, 100), QColor(hand.w.theme.canvas["paper"])     # off the cursor's cross hairs
+        assert tint != paper and tint.blue() > tint.red() > 150      # tinted lightly with the ghost colour, so what's under it shows
+        hand.s.doc.current.color = 1
+        hand.click(100, 80).enter()
+        hand.move(5, 5)
+        assert hand.has_color_near(100, 80, "#ff0000", 0)
+        assert hand.has_color_near(100, 40, hand.w.theme.canvas["ink"], 1)      # the line over it isn't hidden
 
     def test_an_offset_is_shown_before_it_is_made(self, hand):
         add(hand, line(20, 50, 180, 50))
@@ -924,6 +939,7 @@ class TestDxfInTheWindow:
 
         def build(doc, m):
             h = m.add_hatch()
+            h.set_gradient((255, 0, 0), (0, 0, 255))     # a gradient can't be changed here, so it's shown by its outline
             h.paths.add_polyline_path([(0, 0), (1, 0), (1, 1)], is_closed=True)
             m.add_ray((0, 0), (1, 0))
         hand.w.open_path(str(self.write(tmp_path, build)))

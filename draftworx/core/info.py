@@ -11,12 +11,12 @@ from . import dim as dims
 from .curves import Arc, Circle, EllipseArc, Line, Polyline, Spline
 from .geometry import arc_from_center
 from .model import Document, Settings
-from .shapes import AttDef, Dimension, Foreign, Insert, MText, Node, Solid, Text
+from .shapes import AttDef, Dimension, Foreign, Hatch, Insert, MText, Node, Solid, Text
 from .units import format_angle, format_length, parse_angle, parse_length, parse_number
 from .vec import TAU, Vec, polar
 
 NAMES = {Line: "Line", Arc: "Arc", Circle: "Circle", EllipseArc: "Ellipse", Spline: "Spline", Polyline: "Polyline", Node: "Point", Solid: "Solid",
-         Text: "Text", MText: "Paragraph text", AttDef: "Attribute", Insert: "Block"}
+         Text: "Text", MText: "Paragraph text", AttDef: "Attribute", Insert: "Block", Hatch: "Hatch"}
 
 
 def name_of(shape) -> str:
@@ -127,6 +127,21 @@ def rows_for(s, st: Settings) -> list[Row]:
         return [Row("Measures", f"{measured} ({s.measure})"),
                 Row("Text", s.text or "<>", lambda t: replace(s, text="" if t.strip() == "<>" else t, block="")),
                 Row("Style", s.style), Row("Attached", "Yes" if any(r is not None for r in s.refs) else "No")]
+    if k is Hatch:
+        from . import hatch as hatches
+
+        def set_pattern(t):
+            found = hatches.known(t)
+            if found is None:
+                raise ValueError(f"there's no pattern called {t.strip()}. There's {', '.join(hatches.PATTERNS)}")
+            return replace(s, pattern=found, lines=())
+        rows = [Row("Pattern", s.pattern, set_pattern)]
+        if not s.solid:
+            rows += [Row("Scale", f"{s.scale:g}", lambda t: replace(s, scale=_positive(parse_number(t), "A scale"))),
+                     Row("Angle", _ang(s.angle, st), lambda t: replace(s, angle=parse_angle(t)))]
+        rows += [Row("Area", _len(hatches.area(s), st)), Row("Holes", str(max(0, len(s.loops) - 1))),
+                 Row("Follows its boundary", "Yes" if s.refs else "No")]
+        return rows
     if k is Foreign:
         return [Row("From a file", "Its layer and colour can change. Its shape can't, here.")]
     return []
@@ -161,5 +176,8 @@ def summarise(doc: Document, ids) -> Summary:
             area += abs(s.signed_area())
         elif type(s) is EllipseArc and s.closed:
             area += math.pi * s.major.length() ** 2 * s.ratio
+        elif type(s) is Hatch:
+            from .hatch import area as hatch_area
+            area += hatch_area(s)
         box = bbox_union(box, doc.shape_bbox(s))
     return Summary(sum(kinds.values()), dict(kinds), length, area, box)
