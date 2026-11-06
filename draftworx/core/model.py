@@ -145,6 +145,10 @@ class Settings:
     ltscale: float = 1.0
     point_mode: int = 0
     point_size: float = 0.0
+    paper: str = ""                 # the sheet it's printed on ("A3"), or none chosen yet (sheets.py)
+    landscape: bool = True
+    sheet_x: float = 0.0            # where the sheet's lower-left corner is, in the drawing
+    sheet_y: float = 0.0
 
 
 @dataclass(slots=True)
@@ -357,6 +361,21 @@ class Transaction:
 
     def put_dim_style(self, value: DimStyle) -> None:
         self._record("dimstyle", value.name.casefold(), value)
+
+    def remove_linetype(self, name: str) -> None:
+        if name.casefold() in (BYLAYER_TYPE.casefold(), BYBLOCK_TYPE.casefold(), CONTINUOUS.casefold()):
+            raise EditError(f"The {name} line type is always there.")
+        self._record("linetype", name.casefold(), None)
+
+    def remove_text_style(self, name: str) -> None:
+        if name.casefold() == "standard":
+            raise EditError("The Standard text style is always there.")
+        self._record("textstyle", name.casefold(), None)
+
+    def remove_dim_style(self, name: str) -> None:
+        if name.casefold() == "standard":
+            raise EditError("The Standard dimension style is always there.")
+        self._record("dimstyle", name.casefold(), None)
 
     def put_block(self, value: BlockDef) -> None:
         if not value.name.strip():

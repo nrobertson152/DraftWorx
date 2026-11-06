@@ -44,7 +44,15 @@ def self_test() -> int:
     if write_dxf(back) != first:
         print("self-test failed: a DXF file didn't come back the same", file=sys.stderr)
         return 1
-    print(f"{PROGRAM} self-test passed: drawing, saving, reading back, undo and DXF all work.")
+    from .core import sheets
+    from .core.pdf import pdf_of
+    with doc.transaction("Self-test") as t:
+        sheets.apply(t, sheets.fitted(doc, "A4", True, 1.0))
+    pdf, _ = pdf_of(doc, sheets.sheet_of(doc))
+    if not (pdf.startswith(b"%PDF-1.4") and b"/MediaBox [0 0 841.8898 595.2756]" in pdf and pdf.endswith(b"%%EOF\n")):
+        print("self-test failed: a PDF of the drawing didn't come out as it should", file=sys.stderr)
+        return 1
+    print(f"{PROGRAM} self-test passed: drawing, saving, reading back, undo, DXF and PDF all work.")
     try:
         from .gui.app import self_test as window_test
     except ImportError:
@@ -156,11 +164,59 @@ def _convert(args) -> dict:
     return {"ok": True, "path": str(target), "notes": notes}
 
 
+def _pdf(args) -> dict:
+    from pathlib import Path as _Path
+
+    from .core import sheets
+    from .core.pdf import pdf_of
+    from .core.safefile import SaveError, write_verified
+    opened = _open(args.drawing)
+    doc = opened.doc
+    target = _Path(args.output)
+    if target.suffix.casefold() != ".pdf":
+        raise _Refused("The new file's name has to end in .pdf.")
+    if target.exists() and not args.overwrite:
+        raise _Refused(f"{target.name} is already there. Add --overwrite to replace it.", "exists")
+    if args.upright and args.across:
+        raise _Refused("The paper can be upright or across, not both.")
+    own = sheets.sheet_of(doc)
+    paper = sheets.paper_named(args.paper) if args.paper else (own.paper if own else sheets.default_paper(doc))
+    if paper is None:
+        raise _Refused(f"There's no paper called {args.paper}. There's {', '.join(sheets.PAPERS)}.")
+    n = sheets.parse_scale(args.scale) if args.scale else None
+    if args.scale and n is None:
+        raise _Refused(f"{args.scale} isn't a scale. Try 1:50.")
+    asked = args.paper or args.scale or args.upright or args.across
+    if own is None and not asked and sheets.frame_insert(doc) is not None:
+        with doc.transaction("Sheet") as t:     # a drawing with a border, as a DXF brings one back: the sheet is where it is
+            sheets.apply(t, sheets.first_sheet(doc))
+    elif own is None or asked:
+        if sheets.drawn(doc) is None:
+            raise _Refused("There's nothing to print.")
+        landscape = False if args.upright else True if args.across else (doc.settings.landscape if own else True)
+        # the drawing isn't saved: this only says where the sheet goes for this PDF, and its border goes with it
+        with doc.transaction("Sheet") as t:
+            sheets.apply(t, sheets.fitted(doc, paper, landscape, n))
+    sheet = sheets.sheet_of(doc)
+    data, notes = pdf_of(doc, sheet, args.black, target.stem)
+
+    def verify(back: bytes) -> None:
+        if back != data:
+            raise ValueError("it read back differently")
+    try:
+        write_verified(target, data, verify)
+    except SaveError as exc:
+        raise _Refused(str(exc), "error") from exc
+    return {"ok": True, "path": str(target), "paper": sheet.paper, "landscape": sheet.width > sheet.height,
+            "scale": sheets.scale_words(doc.settings.annotation_scale), "sheet": list(sheet.box()), "notes": notes}
+
+
 COMMANDS = {
     "version": ("the program's version and this interface's", None),
     "info": ("what's in a drawing: its objects, layers, blocks and extents", _info),
     "parts": ("the parts list its blocks make, and optionally write it as a BOM that RevisionWorx reads", _parts),
     "convert": ("write a drawing as DXF or .draftworx, checked before it takes the name", _convert),
+    "pdf": ("the drawing's sheet as a PDF, to scale: its own sheet, or one fitted to what's drawn when it has none or one is asked for", _pdf),
 }
 
 
@@ -168,13 +224,21 @@ def run_command(argv: list[str]) -> int:
     """One of the commands for other programs. Always one JSON object out."""
     name = argv[0]
     parser = argparse.ArgumentParser(prog=f"draftworx {name}", description=COMMANDS[name][0])
-    if name in ("info", "parts", "convert"):
+    if name in ("info", "parts", "convert", "pdf"):
         parser.add_argument("drawing")
     if name == "parts":
         parser.add_argument("--csv", help="write the parts list here, as a RevisionWorx BOM")
         parser.add_argument("--number", help="the drawing's own part or assembly number (default: its file name)")
         parser.add_argument("--description", default="")
         parser.add_argument("--revision", default="")
+    if name == "pdf":
+        parser.add_argument("output")
+        parser.add_argument("--paper", help="A4, A3, A2, A1, A0, Letter, Legal, Tabloid, ANSI C, ANSI D or ANSI E")
+        parser.add_argument("--upright", action="store_true", help="the paper upright")
+        parser.add_argument("--across", action="store_true", help="the paper across, as it is unless the drawing's own sheet is upright")
+        parser.add_argument("--scale", help="like 1:50, or 2:1; the largest that fits if not given")
+        parser.add_argument("--black", action="store_true", help="everything in black, as most drawings are printed")
+        parser.add_argument("--overwrite", action="store_true")
     if name == "convert":
         parser.add_argument("output")
         parser.add_argument("--dxf-version", help="R12, 2000, 2004, 2007, 2010, 2013 or 2018")

@@ -4,7 +4,7 @@ DraftWorx is deliberately small. A simple result mustn't look like an exact one,
 
 ## Not there yet
 
-This is early. You can draw lines, polylines, rectangles, circles, arcs, ellipses, points and text, select them, drag their handles, move, copy, rotate, scale, mirror and erase them, trim, extend, offset, fillet, chamfer, array, break, join, explode and stretch them, match one's look to another's, dimension and hatch them, make and place blocks with fields to fill in, and open and save DXF as well as `.draftworx`. Nothing else yet: no printing. See `ROADMAP.md`.
+This is early. You can draw lines, polylines, rectangles, circles, arcs, ellipses, points and text, select them, drag their handles, move, copy, rotate, scale, mirror and erase them, trim, extend, offset, fillet, chamfer, array, break, join, explode and stretch them, match one's look to another's, dimension and hatch them, make and place blocks with fields to fill in, put the drawing on a sheet with a border, print it and make a PDF of it to scale, clean it up, and open and save DXF as well as `.draftworx`. See `ROADMAP.md`.
 
 ## Changing things
 
@@ -42,6 +42,28 @@ This is early. You can draw lines, polylines, rectangles, circles, arcs, ellipse
 - Insert a drawing brings another drawing in as a block named after it. Its layers, styles and blocks come with it, except where this drawing has its own of the same name, which win. What's in it that can't be changed here, such as a 3D solid from a DXF, can't be moved to another drawing either, so it's left out, and the program says how many.
 - Fields are text. AutoCAD's fields that fill themselves in (`%<\AcVar ...>%`) and dynamic blocks' parameters are kept in a DXF but not worked out.
 - A parts list counts placed blocks with a part number field, one level deep (`COMMAND_LINE.md`). It doesn't look inside blocks inside blocks.
+
+## Sheets and printing
+
+- A drawing has one scale and one sheet (`ARCHITECTURE.md`, ADR-5), on A4 to A0, Letter, Legal, Tabloid or ANSI C to E. There are no other paper sizes, and one sheet is one page: several sheets are several drawings.
+- Printing prints the sheet on its paper, to scale. There's no "fit to page", which would look like a scale and not be one. A printer that doesn't have the sheet's paper may shrink or cut it: choose a paper it has with Sheet.
+- Text you write keeps its size in the drawing, as in other CAD programs, so it's smaller on paper at a smaller scale. Dimensions and hatch patterns are sized for the sheet, and change with its scale.
+- When the scale changes, the line type scale changes with it, so dashes keep their size on paper. There's no setting for it by hand: it comes from a DXF's LTSCALE, or 1. A DXF whose LTSCALE was set for its print scale while its dimension scale (DIMSCALE) was left at 0 or 1 gets dashes that much too long when it's first put on a sheet.
+- A DXF keeps the scale (as DIMSCALE and LTSCALE) and the border, which is a block, but has nowhere to say which paper the sheet is or where it goes. Opened again, a drawing with a border gets its sheet back from it, when it's printed or put on a sheet; one without is given a sheet round what's drawn.
+- All text prints in Helvetica, which every PDF reader has and which text is measured with. SHX and TrueType fonts named by a style aren't used. A character Helvetica can't show (outside Western European) prints as ?, and the program says how many there are.
+- Line weights print as set, and the default weight as 0.25 mm. Colours print as they are, darkened where they'd be too pale to see on white, or everything in black.
+- A PDF is one page of vectors and searchable text. It has no layers, links or bookmarks.
+- The same drawing gives the same PDF on the same computer. Another computer's zlib may compress it to different bytes that draw the same.
+- There's one border and title block design, about ISO 7200's, filled in like any block's fields. To use your own, make a block with the name the program gives its own (`Sheet A3 across`), drawn in millimetres from the paper's lower-left corner, and the program uses yours.
+- Templates come with a fixed set of layers and line types. A drawing of your own can be used as a template by saving a copy of it.
+
+## Cleanup
+
+- Cleanup takes out what's drawn twice (the same object, the same look, a line either way round), objects with no size and empty text, and joins straight lines that overlap or meet end to end on one line and look the same. It drops layers, blocks, line types and styles that nothing uses. It shows all of it first, and one undo puts it back.
+- It doesn't join arcs or polylines, take out a line lying along a polyline's side, or join lines that are only nearly in line.
+- What a dimension or hatch is attached to is never the copy that goes, and isn't joined.
+- Layer 0, Defpoints, the current layer and style, and Standard stay. So does anything from a DXF file that the file names or points at elsewhere, such as a layer used in paper space or a dimension style's arrow. Some files from other programs list every style in a way that counts, so those stay.
+- A style used only by another style that goes is found by a second cleanup, not the first.
 
 ## DXF
 

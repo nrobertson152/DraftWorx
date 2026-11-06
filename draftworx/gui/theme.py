@@ -9,13 +9,13 @@ from PySide6.QtGui import QColor, QFontDatabase, QGuiApplication
 
 CANVAS = {
     "paper": {"desk": "#e4e7eb", "paper": "#ffffff", "ink": "#14181d", "grid": "#eef1f4", "grid_major": "#dfe3e8", "select": "#e8590c",
-              "remove": "#d6336c", "ghost": "#1f6feb", "band": "#1f6feb", "band_cross": "#2f9e44", "hover": "#2f9e44", "snap": "#e8590c", "crosshair": "#8a939d", "guide": "#2f9e44"},
+              "remove": "#d6336c", "ghost": "#1f6feb", "band": "#1f6feb", "band_cross": "#2f9e44", "hover": "#2f9e44", "snap": "#e8590c", "crosshair": "#8a939d", "guide": "#2f9e44", "sheet": "#9aa3ad"},
     "dark": {"desk": "#15171a", "paper": "#1d2024", "ink": "#e6e8eb", "grid": "#23272c", "grid_major": "#2d3238", "select": "#ff922b",
-             "remove": "#ff6b9d", "ghost": "#4c8dff", "band": "#4c8dff", "band_cross": "#51cf66", "hover": "#51cf66", "snap": "#ffa94d", "crosshair": "#5c6670", "guide": "#51cf66"},
+             "remove": "#ff6b9d", "ghost": "#4c8dff", "band": "#4c8dff", "band_cross": "#51cf66", "hover": "#51cf66", "snap": "#ffa94d", "crosshair": "#5c6670", "guide": "#51cf66", "sheet": "#4a525b"},
     "blueprint": {"desk": "#0a2a4f", "paper": "#0f3a6b", "ink": "#e9f2ff", "grid": "#164477", "grid_major": "#1d5291", "select": "#ffd43b",
-                  "remove": "#ffa8c5", "ghost": "#a5d8ff", "band": "#a5d8ff", "band_cross": "#b2f2bb", "hover": "#b2f2bb", "snap": "#ffd43b", "crosshair": "#5f8fc4", "guide": "#b2f2bb"},
+                  "remove": "#ffa8c5", "ghost": "#a5d8ff", "band": "#a5d8ff", "band_cross": "#b2f2bb", "hover": "#b2f2bb", "snap": "#ffd43b", "crosshair": "#5f8fc4", "guide": "#b2f2bb", "sheet": "#5f8fc4"},
     "high_contrast": {"desk": "#000000", "paper": "#000000", "ink": "#ffffff", "grid": "#262626", "grid_major": "#404040", "select": "#ffff00",
-                      "remove": "#ff00ff", "ghost": "#00ff00", "band": "#ffff00", "band_cross": "#00ff00", "hover": "#00ff00", "snap": "#ffff00", "crosshair": "#ffffff", "guide": "#00ff00"},
+                      "remove": "#ff00ff", "ghost": "#00ff00", "band": "#ffff00", "band_cross": "#00ff00", "hover": "#00ff00", "snap": "#ffff00", "crosshair": "#ffffff", "guide": "#00ff00", "sheet": "#808080"},
 }
 
 THEMES = {

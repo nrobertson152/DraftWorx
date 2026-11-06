@@ -23,7 +23,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "hypothesis", "ezdxf", "pillow", "pyflakes"]
+dev = ["pytest", "hypothesis", "ezdxf", "pillow", "pyflakes", "pypdf", "pypdfium2"]
 
 [project.urls]
 "Support development" = "https://ko-fi.com/nr270343"

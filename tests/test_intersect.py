@@ -8,7 +8,7 @@ from hypothesis import strategies as st
 from draftworx.core.curves import Arc, Circle, EllipseArc, Line, Polyline, Spline
 from draftworx.core.intersect import intersect
 from draftworx.core.vec import TAU, Vec, tol
-from geom_strategies import angle, arcs, circles, curves, ellipses, lines, point, radius, sweep, unit
+from geom_strategies import _spline, angle, arcs, circles, curves, ellipses, lines, point, radius, sweep, unit
 
 
 def pts(hits):
@@ -337,6 +337,27 @@ def test_swapping_arguments_finds_the_same_points(a, b):
         if da.length() == 0.0 or db.length() == 0.0 or abs(da.unit().cross(db.unit())) < 1e-2:
             continue
         assert q and min(h.point.distance(g.point) for g in q) <= e
+
+
+def test_crossings_too_close_to_tell_apart_come_out_the_same_from_either_side():
+    # Two splines that share a span, each crossing it with its own first span, 0.44 micrometres apart in an 8 m drawing: closer than
+    # hits are told apart, so one is kept, and it has to be the same one whichever curve is searched first. Found by the property test
+    # above (2026-11-06); the first-found was kept, so the answer depended on the order.
+    shared = [Vec(-3489.3054154755473, 289.9028746950589), Vec(4424.79445998518, 496.00387142321324), Vec(585.2395312611934, 0.0),
+              Vec(1475.0, 2554.0)]
+    a = _spline([Vec(0.0, 0.0)] + shared + [Vec(-4123.5882739031185, 0.0), Vec(0.0, 0.0)], 3, False)
+    b = _spline([Vec(585.2395312611934, 0.0)] + shared + [Vec(0.0, 0.0), Vec(0.0, 0.0)], 3, False)
+    e = tolerance(a, b)
+    there = Vec(1714.9534, 363.66)
+    p = [h.point for h in intersect(a, b) if h.point.distance(there) < 0.01]
+    q = [h.point for h in intersect(b, a) if h.point.distance(there) < 0.01]
+    assert len(p) == len(q) == 1 and p[0].distance(q[0]) <= e
+
+
+def test_hits_come_in_order_along_the_first_curve():
+    s = _spline([Vec(0.0, 0.0), Vec(10.0, 40.0), Vec(20.0, -40.0), Vec(30.0, 40.0), Vec(40.0, -40.0), Vec(50.0, 0.0)], 3, False)
+    hits = intersect(s, Line(Vec(-5.0, 0.0), Vec(55.0, 0.0)))
+    assert len(hits) >= 4 and [h.ta for h in hits] == sorted(h.ta for h in hits)
 
 
 @given(lines, arcs)

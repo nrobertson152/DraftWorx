@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The real window, driven by real Qt events."""
+import io
 import math
 import time
 from pathlib import Path
@@ -907,6 +908,69 @@ class TestFilledThings:
         # a half circle with its bulge to the right of the way it goes: below, here
         assert hand.has_color_near(100, 3, ink, 1) or hand.has_color_near(100, 0, ink, 1)
         assert not hand.has_color_near(100, 50, ink, 1)
+
+
+class TestPaper:
+    """A drawing's sheet, printing and PDFs, from the window."""
+
+    def room(self, hand):
+        hand.fit((-1000, -1000, 11000, 7000))
+        add(hand, Polyline((Vec(0.0, 0.0), Vec(10000.0, 0.0), Vec(10000.0, 6000.0), Vec(0.0, 6000.0)), closed=True), line(1000, 1000, 2000, 1000))
+
+    def test_exporting_a_pdf_without_a_sheet_fits_one_first(self, hand, tmp_path, monkeypatch):
+        self.room(hand)
+        monkeypatch.setattr("draftworx.gui.window.QFileDialog.getSaveFileName", lambda *a, **k: (str(tmp_path / "room"), "PDF (*.pdf)"))
+        assert hand.w.export_pdf_dialog()
+        st = hand.doc.settings
+        assert (st.paper, st.annotation_scale) == ("A3", 50) and hand.doc.undo_label == "Sheet"
+        assert (tmp_path / "room.pdf").read_bytes().startswith(b"%PDF-1.4") and "Exported room.pdf" in hand.s.message
+
+    def test_printing_is_to_scale(self, hand, tmp_path):
+        pypdf = pytest.importorskip("pypdf")
+        pdfium = pytest.importorskip("pypdfium2")
+        from PySide6.QtPrintSupport import QPrinter
+
+        from draftworx.core import sheets
+        from draftworx.gui.printing import print_sheet
+        self.room(hand)
+        with hand.doc.transaction("Sheet") as t:
+            sheets.apply(t, sheets.fitted(hand.doc, "A4", True, 50.0))
+        printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+        printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
+        printer.setOutputFileName(str(tmp_path / "printed.pdf"))
+        assert print_sheet(hand.doc, printer) == 0
+        data = (tmp_path / "printed.pdf").read_bytes()
+        (page,) = pypdf.PdfReader(io.BytesIO(data)).pages
+        mm = 25.4 / 72
+        assert float(page.mediabox.width) * mm == pytest.approx(297, abs=0.5) and float(page.mediabox.height) * mm == pytest.approx(210, abs=0.5)
+        image = pdfium.PdfDocument(data)[0].render(scale=10 / 72 * 25.4).to_pil().convert("L")      # 10 pixels to the millimetre
+        sheet = sheets.sheet_of(hand.doc)
+        row = round((sheet.height - (1000 - sheet.at[1]) / 50) * 10)
+        ink = [x for x in range(image.size[0]) if image.getpixel((x, row)) < 160]
+        runs = [x for x in ink if (1000 - sheet.at[0]) / 50 * 10 - 5 < x < (2000 - sheet.at[0]) / 50 * 10 + 5]
+        assert (runs[-1] + 1 - runs[0]) / 10 == pytest.approx(20.0, abs=0.3)
+
+    def test_the_sheet_shows_where_it_is(self, hand):
+        from draftworx.core import sheets
+        self.room(hand)
+        with hand.doc.transaction("Sheet") as t:
+            sheets.apply(t, sheets.fitted(hand.doc, "A4", True, 50.0))
+        hand.fit((-3000, -3000, 13000, 9000))
+        hand.c.redraw()
+        hand.app.processEvents()
+        x0, y0, x1, y1 = sheets.sheet_of(hand.doc).box()
+        mark = hand.w.theme.canvas["sheet"]
+        assert any(hand.has_color_near(x0, y, mark, 1) for y in range(round(y0) + 200, round(y1) - 200, 400))
+
+    def test_a_template_is_a_new_drawing_with_its_sheet(self, hand):
+        from draftworx.core import sheets
+        hand.w.new_from_template("ISO A3 across")
+        assert hand.doc is not None and sheets.frame_insert(hand.w.session.doc) is not None
+        assert not hand.w.session.doc.dirty and "A3" in hand.w.session.message
+
+    def test_print_and_pdf_are_in_the_file_menu_and_the_palette(self, hand):
+        names = {a.text(): a.shortcut().toString() for a in hand.w.menuBar().actions()[0].menu().actions()}
+        assert names["Print…"] == "Ctrl+P" and names["Export PDF…"] == "Ctrl+Shift+P"
 
 
 class TestDxfInTheWindow:

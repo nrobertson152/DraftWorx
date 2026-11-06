@@ -21,7 +21,7 @@ from .vec import TAU, Vec
 
 _LONE_SURROGATE = re.compile("[\ud800-\udfff]")
 FORMAT = "DraftWorx drawing"
-VERSION = 3             # the newest this reads. A drawing is written with the oldest version that can hold it (see `version_needed`).
+VERSION = 4             # the newest this reads. A drawing is written with the oldest version that can hold it (see `version_needed`).
 MAX_ID = 1 << 39        # room for a sub-index under it in the spatial index, and more than any drawing will use
 
 
@@ -281,9 +281,12 @@ def encode_block(v: BlockDef) -> dict:
 
 
 def encode_settings(s: Settings) -> dict:
-    return {"units": s.units, "linear_format": s.linear_format, "linear_decimals": s.linear_decimals, "angle_decimals": s.angle_decimals,
-            "annotation_scale": float(s.annotation_scale), "ltscale": float(s.ltscale), "point_mode": s.point_mode,
-            "point_size": float(s.point_size)}
+    d = {"units": s.units, "linear_format": s.linear_format, "linear_decimals": s.linear_decimals, "angle_decimals": s.angle_decimals,
+         "annotation_scale": float(s.annotation_scale), "ltscale": float(s.ltscale), "point_mode": s.point_mode,
+         "point_size": float(s.point_size)}
+    if s.paper:
+        d.update({"paper": s.paper, "landscape": s.landscape, "sheet_at": [float(s.sheet_x), float(s.sheet_y)]})
+    return d
 
 
 def canonical_state(doc: Document) -> dict:
@@ -299,7 +302,9 @@ def canonical_state(doc: Document) -> dict:
 
 def version_needed(doc: Document) -> int:
     """The oldest format version that holds this drawing, so a drawing without anything newer still opens in an older DraftWorx. Version 2
-    added dimensions and version 3 hatches."""
+    added dimensions, version 3 hatches and version 4 the sheet a drawing prints on, which an older DraftWorx would drop without a word."""
+    if doc.settings.paper:
+        return 4
     kinds = {type(e.shape) for e in doc.entities.values()} | {type(e.shape) for b in doc.blocks for e in b.entities}
     return 3 if Hatch in kinds else 2 if Dimension in kinds else 1
 
@@ -576,9 +581,11 @@ def build(obj, source_reader=None) -> Document:
     if not isinstance(s, dict):
         raise FormatError("The file's settings should be an object.")
     ctx = "Settings"
+    sheet_at = _pt_of(s, "sheet_at", ctx) if "sheet_at" in s else Vec(0.0, 0.0)
     doc.settings = Settings(_str(s, "units", ctx, "mm"), _str(s, "linear_format", ctx, "decimal"), _int(s, "linear_decimals", ctx, 2, 0, 15),
                             _int(s, "angle_decimals", ctx, 1, 0, 15), _num(s, "annotation_scale", ctx, 1.0), _num(s, "ltscale", ctx, 1.0),
-                            _int(s, "point_mode", ctx, 0), _num(s, "point_size", ctx, 0.0))
+                            _int(s, "point_mode", ctx, 0), _num(s, "point_size", ctx, 0.0), _str(s, "paper", ctx, ""), _bool(s, "landscape", ctx, True),
+                            sheet_at[0], sheet_at[1])
     for item in _list(obj, "layers"):
         item = _named(item, "layer")
         ctx = f"Layer {item['name']}"
