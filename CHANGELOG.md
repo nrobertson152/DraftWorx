@@ -22,4 +22,5 @@
 - Cleanup: what's drawn twice, what has no size, lines that overlap, and names nothing uses, shown first and taken out in one undo step.
 - Bottom-aligned text sits on its point, as other programs place it. It was drawn a little low.
 - Where two curves cross twice closer together than can be told apart, the same point is found whichever is first.
+- RevisionWorx: the status strip says what RevisionWorx says about the drawing, with its one next step as a button (Check out, Check in…). Checking in saves first, and can take the parts list along as a BOM next to the drawing, which OpenMeridian imports once it's released. File ▸ RevisionWorx undoes a check-out and adds a drawing to a project. Someone else's checked-out file isn't saved over.
 - DXF as a working format, R12 to 2018, text and binary. A file nobody changed comes back byte for byte, and what's changed is all that changes. What can't be edited yet, such as dimensions and hatches, is shown as far as it can be, kept, and said so. Export as R12 for machines that need it.

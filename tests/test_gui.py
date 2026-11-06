@@ -973,6 +973,107 @@ class TestPaper:
         assert names["Print…"] == "Ctrl+P" and names["Export PDF…"] == "Ctrl+Shift+P"
 
 
+class TestRevisionWorx:
+    """RevisionWorx in the window, with the real program. Skipped without it; CI installs it."""
+
+    @pytest.fixture(autouse=True)
+    def needs_it(self):
+        from draftworx.integrations.revisionworx import find_command
+        if find_command() is None:
+            pytest.skip("RevisionWorx isn't installed")
+
+    def change(self, hand):
+        with hand.w.session.doc.transaction("x") as t:
+            t.add(line(0, 0, 0, 80))
+
+    def test_it_says_what_the_drawing_is_and_offers_the_next_step(self, hand, tmp_path):
+        import family
+        ws = family.workspace(tmp_path)
+        f = family.controlled(ws)
+        assert hand.w.open_path(str(f))
+        hand.w.refresh_revision(wait=True)
+        chip, first = hand.w.revision, hand.w.revision_status.revision
+        assert chip.isVisible() and chip.label.text() == f"DWG-1 rev {first} · Work in Progress" and chip.button.text() == "Check out"
+        assert hand.w.revision_menu.menuAction().isVisible() and not hand.w.actions_by_name["Undo check-out…"].isEnabled()
+        assert hand.w.check_out()
+        assert chip.button.text() == "Check in…" and chip.label.text().endswith("checked out by you")
+        self.change(hand)
+        assert hand.w.check_in(message="A line up the side", parts=False)
+        s = hand.w.revision_status
+        assert not s.checked_out_by and s.file_state == "unchanged" and s.revision != first and not hand.w.session.doc.dirty
+        assert hand.s.message == f"Checked in DWG-1 as revision {s.revision}."
+        assert chip.button.text() == "Check out"
+
+    def test_an_answer_that_comes_back_late_doesnt_count(self, hand, tmp_path):
+        import family
+        f = family.controlled(family.workspace(tmp_path))
+        hand.w.open_path(str(f))
+        hand.w.refresh_revision(wait=True)
+        asked, before = hand.w._question, hand.w.revision_status
+        assert hand.w.check_out()
+        hand.w._revision_answered(asked, str(f), before)        # what was asked before the check-out, arriving after it
+        assert hand.w.revision_status.mine and hand.w.revision.button.text() == "Check in…"
+
+    def test_a_change_makes_check_in_the_next_step(self, hand, tmp_path):
+        import family
+        f = family.controlled(family.workspace(tmp_path))
+        hand.w.open_path(str(f))
+        hand.w.refresh_revision(wait=True)
+        self.change(hand)
+        hand.w._state_changed()
+        assert hand.w.revision.button.text() == "Check in…"
+
+    def test_the_parts_list_goes_with_it(self, hand, tmp_path):
+        import family
+        f = family.controlled(family.workspace(tmp_path), family.valves())
+        hand.w.open_path(str(f))
+        self.change(hand)
+        assert hand.w.check_in(message="Valves", parts=True)
+        assert "Its parts list is DWG-1-BOM, revision" in hand.s.message
+
+    def test_someone_elses_working_file_isnt_saved_over(self, hand, tmp_path, monkeypatch):
+        import family
+        ws = family.workspace(tmp_path)
+        f = family.controlled(ws)
+        hand.w.open_path(str(f))
+        family.run("-w", ws[0], "doc", "checkout", ws[3].status(f).doc_id, env=family.elsewhere(tmp_path))
+        hand.w.refresh_revision(wait=True)
+        assert not hand.w.revision.button.isVisible() and "checked out by" in hand.w.revision.label.text()
+        before = f.read_bytes()
+        self.change(hand)
+        asked = []
+        monkeypatch.setattr("draftworx.gui.window.QMessageBox.exec", lambda box: asked.append(box.text()) or 0)
+        assert not hand.w.save()
+        assert f.read_bytes() == before and hand.w.session.doc.dirty
+        assert asked and "Saving here would overwrite the file they're working on" in asked[0]
+
+    def test_undo_check_out_can_put_the_revision_back(self, hand, tmp_path):
+        import family
+        f = family.controlled(family.workspace(tmp_path))
+        before = f.read_bytes()
+        hand.w.open_path(str(f))
+        assert hand.w.check_out()
+        self.change(hand)
+        assert hand.w.save()
+        assert hand.w.undo_check_out(put_back=True)
+        assert f.read_bytes() == before and len(hand.w.session.doc.entities) == 1 and not hand.w.revision_status.checked_out_by
+
+    def test_adding_a_drawing_from_elsewhere_carries_on_with_its_copy(self, hand, tmp_path, monkeypatch):
+        import family
+        from draftworx.core.native import dumps
+        eng, project, folder, rwx = family.workspace(tmp_path)
+        monkeypatch.setenv("REVISIONWORX_WORKSPACE", str(eng))     # as RevisionWorx would know it, once it had opened it
+        f = tmp_path / "bracket.draftworx"
+        f.write_bytes(dumps(family.drawing()))
+        hand.w.open_path(str(f))
+        hand.w.refresh_revision(wait=True)
+        assert not hand.w.revision.isVisible() and hand.w.actions_by_name["Add to RevisionWorx…"].isEnabled()
+        assert hand.w.add_to_revisionworx(({"id": project, "workspace": str(eng)}, "DWG-7", "Bracket", "First issue"))
+        here = hand.w.opened.path
+        assert folder in here.parents and hand.w.revision_status.number == "DWG-7" and hand.w.revision.isVisible()
+        assert "This is its copy in the project's folder" in hand.s.message
+
+
 class TestDxfInTheWindow:
     def write(self, tmp_path, build, version="R2013", name="a.dxf"):
         ezdxf = pytest.importorskip("ezdxf")

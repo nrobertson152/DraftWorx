@@ -230,6 +230,14 @@ def frame_insert(doc: Document) -> int | None:
     return None
 
 
+def title_block(doc: Document) -> dict[str, str]:
+    """What's filled in on the border's title block, by field (TITLE, DRAWING_NO, ...). Empty without one."""
+    i = frame_insert(doc)
+    if i is None:
+        return {}
+    return {a.tag.upper(): a.text.text.strip() for a in doc.entities[i].shape.attribs if a.text.text.strip()}
+
+
 def first_sheet(doc: Document, paper: str | None = None) -> Settings:
     """A sheet for a drawing that hasn't one. Where its border is, if it has one, as a DXF file brings back a drawing that had a sheet:
     the border's block says the paper, and where it's placed and how big say the rest. Otherwise round what's drawn."""
@@ -317,5 +325,5 @@ def from_template(name: str) -> Document:
 
 
 __all__ = ["FIELDS", "FRAME_LAYER", "IMPERIAL", "METRIC", "OFF_SHEET", "PAPERS", "Sheet", "TEMPLATES", "apply", "default_paper", "drawn", "fitted", "fitting_scale", "frame",
-           "first_sheet", "frame_insert", "frame_name", "frame_paper", "from_template", "off_sheet", "paper_named", "parse_scale", "per_mm", "place_frame", "scale_words", "sheet_of",
+           "first_sheet", "frame_insert", "frame_name", "frame_paper", "from_template", "off_sheet", "paper_named", "parse_scale", "per_mm", "place_frame", "scale_words", "sheet_of", "title_block",
            "size_of"]

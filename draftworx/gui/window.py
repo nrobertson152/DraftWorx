@@ -5,11 +5,14 @@ from __future__ import annotations
 import math
 import os
 import secrets
+import time
 from pathlib import Path
+
+from contextlib import contextmanager
 
 from PySide6.QtCore import QEvent, QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QIcon, QKeySequence, QPainter, QPixmap
-from PySide6.QtWidgets import (QAbstractSpinBox, QApplication, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox,
+from PySide6.QtWidgets import (QAbstractSpinBox, QApplication, QComboBox, QDialog, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox,
                                QPlainTextEdit, QPushButton, QToolButton, QVBoxLayout, QWidget)
 
 from .. import __version__
@@ -27,6 +30,8 @@ from . import icons, theme as themes
 from .canvas import Canvas
 from .palette import Entry, Palette
 from .panel import ContextPanel
+from ..integrations.revisionworx import RwxError
+from .revision import AddDialog, Asker, CheckInDialog, RevisionChip
 
 FILE_FILTER = "Drawings (*.draftworx *.dxf);;DraftWorx drawings (*.draftworx);;DXF files (*.dxf)"
 SAVE_FILTER = "DraftWorx drawing (*.draftworx);;DXF file (*.dxf)"
@@ -48,6 +53,11 @@ class MainWindow(QMainWindow):
         self.opened = Opened(self.session.doc)
         self.session_id = f"{os.getpid()}-{secrets.token_hex(6)}"
         self._saved_at_autosave = -1
+        self.revision_status = None         # what RevisionWorx last said about the drawing's file (integrations/revisionworx.py)
+        self._asker = Asker(self)
+        self._asker.answered.connect(self._revision_answered)
+        self._asked_at = 0.0
+        self._question = 0
         self.canvas = Canvas(self.session, self.theme, self.config)
         self.panel = ContextPanel(self.session, self.theme)
         self.setWindowTitle("DraftWorx")
@@ -67,6 +77,7 @@ class MainWindow(QMainWindow):
         self.canvas.setFocus()
         if path:
             self.open_path(path)
+        self.refresh_revision()
 
     # ---------------------------------------------------------------------------------------------- building it
 
@@ -147,6 +158,9 @@ class MainWindow(QMainWindow):
         self.message.setObjectName("message")
         h.addWidget(self.message)
         h.addStretch(1)
+        self.revision = RevisionChip()
+        self.revision.act.connect(lambda what: self.check_in() if what == "check-in" else self.check_out())
+        h.addWidget(self.revision)
         self.coords = QLabel("")
         self.coords.setObjectName("small")
         self.coords.setMinimumWidth(150)
@@ -194,6 +208,14 @@ class MainWindow(QMainWindow):
         file.addSeparator()
         self._action(file, "Print…", self.print_dialog, QKeySequence.StandardKey.Print, "print")
         self._action(file, "Export PDF…", self.export_pdf_dialog, QKeySequence("Ctrl+Shift+P"), "pdf")
+        file.addSeparator()
+        self.revision_menu = file.addMenu("RevisionWorx")
+        self._action(self.revision_menu, "Check out", self.check_out)
+        self._action(self.revision_menu, "Check in…", self.check_in)
+        self._action(self.revision_menu, "Undo check-out…", self.undo_check_out)
+        self._action(self.revision_menu, "Add to RevisionWorx…", self.add_to_revisionworx)
+        self._action(self.revision_menu, "Show in RevisionWorx", self.show_in_revisionworx)
+        self.revision_menu.menuAction().setVisible(False)
         file.addSeparator()
         self._action(file, "Exit", self.close, QKeySequence.StandardKey.Quit)
         edit = bar.addMenu("&Edit")
@@ -260,6 +282,7 @@ class MainWindow(QMainWindow):
         s = self.session
         self.prompt.setText(s.prompt)
         self.message.setText(s.message)
+        self.revision.show_status(self.revision_status, s.doc.dirty)
         st = s.doc.settings
         p = s.snap.point if s.snap is not None else s.cursor
         self.coords.setText(f"{format_length(p[0], st.linear_format, st.linear_decimals, st.units)}, "
@@ -392,6 +415,13 @@ class MainWindow(QMainWindow):
             extras.append(Entry(f"Theme: {t['label']}", "Change how the program looks", lambda n=name: self.set_theme(n)))
         for name in sheets.TEMPLATES:
             extras.append(Entry(f"New: {name}", "A new drawing with a border and title block", lambda n=name: self.new_from_template(n)))
+        for label, help_, fn in (("Check out", "Check the drawing out in RevisionWorx, so it's yours to change", self.check_out),
+                                 ("Check in…", "Keep your changes in RevisionWorx as a new revision", self.check_in),
+                                 ("Undo check-out…", "Give the check-out up in RevisionWorx", self.undo_check_out),
+                                 ("Add to RevisionWorx…", "Put the drawing under revision control in a project", self.add_to_revisionworx),
+                                 ("Show in RevisionWorx", "Show the drawing's document in RevisionWorx", self.show_in_revisionworx)):
+            if self.revision_menu.menuAction().isVisible() and self.actions_by_name[label].isEnabled():
+                extras.append(Entry(label.rstrip("…"), help_, fn))
         dialog = Palette(self, self.session, extras)
         c = self.mapToGlobal(self.rect().center())
         dialog.move(c.x() - 260, self.mapToGlobal(self.rect().topLeft()).y() + 60)
@@ -452,11 +482,13 @@ class MainWindow(QMainWindow):
     def _adopt(self, opened: Opened) -> None:
         recovery.forget(self.session_id)
         self.opened = opened
+        self.revision_status = None
         self.canvas.set_document(opened.doc)
         self.panel.set_notes(opened.notices)
         self.panel.refresh(True)
         self._state_changed()
         self.canvas.setFocus()
+        self.refresh_revision()
 
     def open_dialog(self) -> None:
         if not self._confirm_discard():
@@ -612,6 +644,9 @@ class MainWindow(QMainWindow):
         return True
 
     def _save_to(self, path: str | None, force: bool = False) -> bool:
+        target = Path(path) if path else self.opened.path
+        if target is not None and target.exists() and not self._may_write(target):
+            return False
         try:
             save_drawing(self.opened, path, force)
         except ChangedOnDisk as exc:
@@ -636,7 +671,245 @@ class MainWindow(QMainWindow):
             self.config.remember(str(self.opened.path))
             save_config(self.config)
         self._say(" ".join([f"Saved {self.opened.path.name}.", *self.opened.notices]))
+        self.refresh_revision()
         return True
+
+    # ------------------------------------------------------------------------------------------------- RevisionWorx
+
+    def refresh_revision(self, wait: bool = False) -> None:
+        """Ask RevisionWorx about the drawing's file again: in the background, or now. Only the newest question's answer counts."""
+        self._asked_at = time.monotonic()
+        self._question += 1
+        path = str(self.opened.path) if self.opened.path is not None else ""
+        if wait:
+            self._revision_answered(self._question, path, self._asker.now(path))
+        else:
+            self._asker.ask(self._question, path)
+
+    def _revision_answered(self, question: int, path: str, status) -> None:
+        here = str(self.opened.path) if self.opened.path is not None else ""
+        if question != self._question or path != here:
+            return                  # out of date: a newer question was asked, or it's about a drawing that isn't open any more
+        self.revision_status = status
+        available = self._asker.available
+        self.revision_menu.menuAction().setVisible(available)
+        s = status
+        controlled = s is not None and s.controlled
+        for label, on in (("Check out", controlled and not s.checked_out_by), ("Check in…", controlled and not s.theirs),
+                          ("Undo check-out…", controlled and s.mine), ("Add to RevisionWorx…", available and not controlled),
+                          ("Show in RevisionWorx", controlled)):
+            self.actions_by_name[label].setEnabled(bool(on))
+        self.revision.show_status(status, self.session.doc.dirty)
+
+    @contextmanager
+    def _waiting(self):
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            yield
+        finally:
+            QApplication.restoreOverrideCursor()
+
+    def _rwx(self):
+        rwx = self._asker.rwx()
+        if rwx is None:
+            QMessageBox.information(self, "DraftWorx", "RevisionWorx isn't installed, or DraftWorx can't find it. Put it on the PATH, or set "
+                                    "REVISIONWORX_CLI to its revisionworx program.")
+        return rwx
+
+    def _refused(self, exc: Exception) -> bool:
+        QMessageBox.warning(self, "DraftWorx", f"RevisionWorx: {exc}")
+        self.refresh_revision(wait=True)
+        return False
+
+    def _may_write(self, target: Path) -> bool:
+        """Whether saving over this file is all right: not if it's someone else's checked-out working file, which would lose their work."""
+        s = self._asker.now(str(target)) if self._asker.rwx() is not None else None
+        if s is None and self.revision_status is not None and self.opened.path is not None and target == self.opened.path:
+            s = self.revision_status        # RevisionWorx didn't answer: what it said last
+        if s is None or not s.theirs:
+            return True
+        box = QMessageBox(self)
+        box.setWindowTitle("DraftWorx")
+        box.setText(f"{s.name} is checked out by {s.checked_out_by}. Saving here would overwrite the file they're working on.")
+        copy = box.addButton("Save a copy…", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(copy)
+        box.exec()
+        if box.clickedButton() is copy:
+            return self.save_as() and False
+        return False
+
+    def check_out(self) -> bool:
+        self.refresh_revision(wait=True)
+        s = self.revision_status
+        rwx = self._rwx()
+        if rwx is None or s is None or not s.controlled:
+            return False
+        if s.checked_out_by:
+            self._say(f"{s.name} is already checked out by {'you' if s.mine else s.checked_out_by}.")
+            return s.mine
+        try:
+            with self._waiting():
+                rwx.check_out(s)
+        except RwxError as exc:
+            return self._refused(exc)
+        self.refresh_revision(wait=True)
+        self._say(f"Checked out {s.name}. Change it, save it, then check it in.")
+        return True
+
+    def check_in(self, message: str | None = None, parts: bool | None = None) -> bool:
+        """Keep the drawing as a new revision: saved first if it has changes, checked out first if nobody has it. Its parts list goes with
+        it as a BOM if asked. `message` and `parts` stand in for the dialog."""
+        from ..core.parts import parts_list
+        from ..integrations.revisionworx import publish_parts
+        self.refresh_revision(wait=True)
+        s = self.revision_status
+        if s is None or not s.controlled:
+            return self.add_to_revisionworx()
+        rwx = self._rwx()
+        if rwx is None:
+            return False
+        if s.theirs:
+            QMessageBox.information(self, "DraftWorx", f"{s.name} is checked out by {s.checked_out_by}. It can be checked in once they have.")
+            return False
+        doc = self.session.doc
+        count = len(parts_list(doc)[0])
+        if message is None:
+            dialog = CheckInDialog(self, s.name, count)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return False
+            message, parts = dialog.text, dialog.parts.isChecked()
+        if doc.dirty and not self.save():
+            return False
+        notes = []
+        try:
+            with self._waiting():
+                answer = rwx.check_in(self.opened.path, message)
+                label = ((answer.get("document") or {}).get("latest") or {}).get("label", "?")
+                if answer.get("result") == "unchanged":
+                    after = rwx.status(self.opened.path)
+                    if after.mine:
+                        rwx.undo_check_out(after, False)       # nothing to keep, so it isn't left checked out
+                    notes.append(f"Nothing had changed since revision {label}, so there's no new one, and it's checked back in.")
+                else:
+                    notes.append(f"Checked in {s.name} as revision {label}.")
+                if parts and count:
+                    bom = publish_parts(rwx, rwx.status(self.opened.path), doc, message)
+                    if bom is not None:
+                        d = bom.get("document") or {}
+                        what = "unchanged" if bom.get("result") == "unchanged" else f"revision {(d.get('latest') or {}).get('label', '?')}"
+                        notes.append(f"Its parts list is {d.get('number', 'a BOM')}, {what}.")
+        except RwxError as exc:
+            return self._refused(exc)
+        self.refresh_revision(wait=True)
+        self._say(" ".join(notes))
+        return True
+
+    def undo_check_out(self, put_back: bool | None = None) -> bool:
+        self.refresh_revision(wait=True)
+        s = self.revision_status
+        rwx = self._rwx()
+        if rwx is None or s is None or not s.mine:
+            return False
+        if put_back is None:
+            box = QMessageBox(self)
+            box.setWindowTitle("DraftWorx")
+            box.setText(f"Give up the check-out of {s.name}?")
+            box.setInformativeText(f"Keep the file as it is, or put revision {s.revision} back in it, losing what's changed since"
+                                   + (", saved or not." if self.session.doc.dirty else "."))
+            keep = box.addButton("Keep the file as it is", QMessageBox.ButtonRole.AcceptRole)
+            back = box.addButton(f"Put revision {s.revision} back", QMessageBox.ButtonRole.DestructiveRole)
+            box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+            box.setDefaultButton(keep)
+            box.exec()
+            if box.clickedButton() not in (keep, back):
+                return False
+            put_back = box.clickedButton() is back
+        try:
+            with self._waiting():
+                rwx.undo_check_out(s, put_back)
+        except RwxError as exc:
+            return self._refused(exc)
+        if put_back:
+            path = self.opened.path
+            try:
+                self._adopt(open_drawing(path))
+            except FormatError as exc:
+                QMessageBox.warning(self, "DraftWorx", str(exc))
+                return False
+            self.refresh_revision(wait=True)
+            self._say(f"{s.name} is checked back in, and revision {s.revision} is back.")
+        else:
+            self.refresh_revision(wait=True)
+            self._say(f"{s.name} is checked back in. The file stays as it is.")
+        return True
+
+    def add_to_revisionworx(self, choice: tuple[dict, str, str, str] | None = None) -> bool:
+        """Put the drawing under revision control in a project. `choice` (project, number, title, description) stands in for the dialog."""
+        rwx = self._rwx()
+        if rwx is None:
+            return False
+        from ..integrations.revisionworx import workspaces_for
+        try:
+            with self._waiting():
+                found = []
+                for ws in workspaces_for(rwx, self.opened.path):
+                    for p in rwx.projects(ws["location"]):
+                        if p.get("mode", "managed") == "managed" and not p.get("archived"):
+                            found.append({**p, "workspace": ws["location"], "workspace_name": ws["name"]})
+        except RwxError as exc:
+            return self._refused(exc)
+        if not found:
+            QMessageBox.information(self, "DraftWorx", "RevisionWorx has no project to put it in yet. Make one in RevisionWorx first.")
+            return False
+        if len({p["workspace"] for p in found}) < 2:
+            found = [{**p, "workspace_name": ""} for p in found]
+        if choice is None:
+            from ..integrations.revisionworx import project_for
+            fields = sheets.title_block(self.session.doc)
+            stem = self.opened.path.stem if self.opened.path else ""
+            dialog = AddDialog(self, found, project_for(found, self.opened.path) if self.opened.path else None,
+                               fields.get("DRAWING_NO", stem), fields.get("TITLE", stem))
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return False
+            choice = (dialog.chosen, dialog.number.text().strip(), dialog.title.text().strip(), dialog.message.text().strip())
+        project, number, title, message = choice
+        if (self.opened.path is None or self.session.doc.dirty) and not self.save():
+            return False
+        try:
+            with self._waiting():
+                answer = rwx.publish(self.opened.path, project["id"], number, title, message or "First issue", workspace=project.get("workspace", ""))
+        except RwxError as exc:
+            return self._refused(exc)
+        d = answer.get("document") or {}
+        label = (d.get("latest") or {}).get("label", "?")
+        where = d.get("path", "")
+        if where and Path(where).resolve() != self.opened.path.resolve():
+            if not self.open_path(where):
+                return False
+            self.refresh_revision(wait=True)
+            self._say(f"Added as {d.get('number') or title} revision {label}. This is its copy in the project's folder.")
+        else:
+            self.refresh_revision(wait=True)
+            self._say(f"Added as {d.get('number') or title} revision {label}.")
+        return True
+
+    def show_in_revisionworx(self) -> bool:
+        rwx = self._rwx()
+        if rwx is None or self.opened.path is None:
+            return False
+        try:
+            rwx.show(self.opened.path)
+        except RwxError as exc:
+            return self._refused(exc)
+        return True
+
+    def changeEvent(self, ev) -> None:
+        """Coming back to the window, RevisionWorx may have been used in the meantime: what it says is asked again."""
+        super().changeEvent(ev)
+        if ev.type() == QEvent.Type.ActivationChange and self.isActiveWindow():
+            if time.monotonic() - self._asked_at > 3.0:
+                self.refresh_revision()
 
     def _autosave(self) -> None:
         doc = self.session.doc

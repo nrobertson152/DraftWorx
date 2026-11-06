@@ -65,6 +65,16 @@ This is early. You can draw lines, polylines, rectangles, circles, arcs, ellipse
 - Layer 0, Defpoints, the current layer and style, and Standard stay. So does anything from a DXF file that the file names or points at elsewhere, such as a layer used in paper space or a dimension style's arrow. Some files from other programs list every style in a way that counts, so those stay.
 - A style used only by another style that goes is found by a second cleanup, not the first.
 
+## RevisionWorx
+
+- DraftWorx uses RevisionWorx's command line: `revisionworx link` for what it says about a file, checking in and adding a drawing, and `revisionworx --json doc checkout|cancel` for checking out and undoing it. RevisionWorx 1.0 or later. Its rules, locks and records apply exactly as they would by hand.
+- A drawing is checked out when you ask, or at check-in if nobody has it. Changing a drawing doesn't check it out by itself, and saving a drawing that isn't checked out to you makes it "changed without a check-out", as RevisionWorx calls it, until it's checked in. What it doesn't do is save over someone else's checked-out working file: that's refused, and Save a copy offered.
+- That refusal needs RevisionWorx's answer. If it doesn't answer when you save, what it said last is used; if it never said anything, the save goes ahead.
+- What RevisionWorx says is asked again on opening, saving, checking in or out, and coming back to the window. A change made in RevisionWorx shows when you come back to DraftWorx, not while you're in it.
+- The title block's fields aren't filled in from RevisionWorx, or the other way round. Adding a drawing takes its number and title from the title block, if it has one, as the suggestion.
+- The parts list goes as a BOM CSV document numbered as the drawing is with `-BOM`, in the project's BOM folder if it has one. It names the drawing's revision. OpenMeridian imports it once it's released in RevisionWorx, not before.
+- Tested with the real RevisionWorx and OpenMeridian in CI, on one computer. Not with a workspace in a shared folder between real computers, which RevisionWorx itself hasn't verified yet.
+
 ## DXF
 
 What's kept, what's shown and what isn't are in `DXF.md`. The short version: nothing in a file is lost by opening and saving it, but tables, leaders, gradient fills and 3D objects from a file can't be changed yet, some are shown only by their outlines, and some aren't shown at all. The program says which when it opens the file.
