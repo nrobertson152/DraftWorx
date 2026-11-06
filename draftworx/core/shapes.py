@@ -19,6 +19,7 @@ _WIDTHS = (278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333,
            556, 278, 556, 556, 222, 222, 500, 222, 833, 556, 556, 556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334,
            260, 334, 584)
 _CAP = 718.0
+_DESCENDER = 207.0      # how far below the baseline its lowest letters go
 
 
 def text_width(s: str, height: float, width_factor: float = 1.0) -> float:
@@ -82,6 +83,12 @@ class Text:
 
     kind = "text"
 
+    def baseline_shift(self) -> float:
+        """How far the baseline is above `p`, by the vertical alignment: on it for baseline; a descender's depth above it for bottom, so
+        the lowest letters (Helvetica's, ADR-10) reach `p`; and below it for middle and top, which are of the capitals."""
+        h = self.height
+        return {0: 0.0, 1: _DESCENDER / _CAP * h, 2: -0.5 * h, 3: -h}.get(2 if self.halign == 4 else self.valign, 0.0)
+
     def box(self) -> tuple[Vec, Vec, Vec]:
         """(lower-left, along, up) of the box the text occupies, for pick and extents."""
         length = text_width(self.text, self.height, self.width_factor)
@@ -99,8 +106,7 @@ class Text:
         along = Vec(math.cos(rot), math.sin(rot))
         up = along.perp()
         dx = {0: 0.0, 1: -0.5, 2: -1.0, 4: -0.5}.get(self.halign, 0.0) * length
-        dy = {0: 0.0, 1: -0.25 * h, 2: -0.5 * h, 3: -h}[self.valign if self.halign != 4 else 2]
-        start = self.p + along * dx + up * dy
+        start = self.p + along * dx + up * self.baseline_shift()
         return start, along * length, up * h
 
     def bbox(self) -> BBox:

@@ -16,7 +16,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from draftworx.core import cleanup, sheets  # noqa: E402
 from draftworx.core import hatch as hatches  # noqa: E402
+from draftworx.core.pdf import pdf_of  # noqa: E402
 from draftworx.core import regions  # noqa: E402
 from draftworx.core.curves import Arc, Circle, Line, Polyline  # noqa: E402
 from draftworx.core.dxf import read_dxf, write_dxf  # noqa: E402
@@ -176,6 +178,15 @@ def main() -> int:
     results.append((f"hatch: find a room among {len(rooms.entities)} lines", t, 0.5))
     t, _ = timed(lambda: hatches.pieces(hatches.made_from(found, "ANSI37", 0.05, 0.3, Vec(middle, middle))))
     results.append(("hatch: a fine pattern across a room", t, 0.5))
+
+    def pdf_everything():
+        st = sheets.fitted(doc, "A0", True)
+        sheet = sheets.Sheet(st.paper, *sheets.size_of(st.paper, True), Vec(st.sheet_x, st.sheet_y), sheets.per_mm(st))
+        return pdf_of(doc, sheet)
+    t, (pdf, _) = timed(pdf_everything)
+    results.append((f"a PDF of everything ({len(pdf) / 1e6:.1f} MB)", t, 30.0 * k))
+    t, _ = timed(lambda: cleanup.plan(doc))
+    results.append(("cleanup: work out what goes", t, 30.0 * k))
 
     results.extend(window_times(doc, k))
 

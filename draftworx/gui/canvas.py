@@ -13,6 +13,7 @@ from PySide6.QtGui import QBrush, QColor, QFont, QFontMetricsF, QImage, QPainter
 from PySide6.QtWidgets import QWidget
 
 from ..core.commands import search
+from ..core import sheets
 from ..core.session import GetPick, GetPoint, Session
 from ..core.shapes import Hatch
 from ..core.snap import REAL, Guide, Kind
@@ -263,10 +264,23 @@ class Canvas(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         if self.config.show_grid:
             self._paint_grid(p)
+        self._paint_sheet(p)
         self.scene.paint(p, self.view, self.config.show_weights)
         self._paint_selection(p)
         p.end()
         self._stale = False
+
+    def _paint_sheet(self, p: QPainter) -> None:
+        """The edge of the paper the drawing prints on, at its scale, so what's on the sheet is plain while drawing."""
+        sheet = sheets.sheet_of(self.session.doc)
+        if sheet is None:
+            return
+        x0, y0, x1, y1 = sheet.box()
+        a, b = self.view.to_screen(x0, y0), self.view.to_screen(x1, y1)
+        pen = QPen(QColor(self.theme.canvas["sheet"]), 1.0, Qt.PenStyle.DashLine)
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawRect(QRectF(QPointF(min(a[0], b[0]), min(a[1], b[1])), QPointF(max(a[0], b[0]), max(a[1], b[1]))))
 
     def _paint_grid(self, p: QPainter) -> None:
         """Faint lines at a round spacing for this zoom. It orients the eye. Snapping to it is separate (F9)."""

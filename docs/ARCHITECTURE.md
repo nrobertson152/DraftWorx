@@ -30,6 +30,8 @@ draftworx/
     ops/                        trim, extend, offset, fillet, cleanup and the like
     dim                         what a dimension measures, says and draws, and how it follows what it's attached to
     regions, hatch              the area round a point, and what a hatch draws there
+    sheets, printing, pdf       the sheet and its border, what a sheet prints, and a PDF of it with no Qt
+    cleanup                     what's drawn twice, has no size, overlaps, or is named and unused
   gui/             PySide6. Thin: it forwards events and paints what the core says.
   integrations/    RevisionWorx, OpenSchematix, OpenMeridian, through their files and command lines
   cli              `draftworx`, one JSON object per command for other programs
@@ -107,6 +109,27 @@ by a factor anyway. A DXF that has layouts keeps them: they're preserved and wri
 
 Multi-scale sheets can come later as "details": a block placed at another scale, which is simple and already expressible. That's the path to look at if this limit bites,
 not viewports.
+
+*As built:* the sheet is a paper and a corner in the drawing's settings (`sheets.py`); its size in the drawing is the paper's times the scale, so it can't disagree with
+either. A border and title block is an ordinary block, placed at the scale, with fields; it goes with the sheet when the sheet moves or the scale changes, and so do line
+types, so their dashes keep their size on paper. A drawing printed without a sheet is given one first, round what's drawn at the largest standard scale that fits, as its
+own undo step, and the program says what it chose.
+
+### ADR-15: One walk of the drawing prints it, for a PDF and for a printer
+
+`printing.py` turns a sheet into strokes, fills, dots and text in millimetres on the paper, through one transform, and hands them to a page. The PDF writer (`pdf.py`,
+standard library only) and the window's printer (`gui/printing.py`, Qt) are two pages, so what they print can't differ, and the PDF, which is what's tested, stands for
+both. The PDF's numbers are points to a ten-thousandth, so a length on paper is the drawing's divided by its scale to within 36 nanometres; it has no date in it, so the
+same drawing gives the same file.
+
+*Challenged:* printing through Qt for PDFs too (QPdfWriter). It needs Qt for `draftworx pdf`, and its output can't be checked by arithmetic. *Given up:* fonts: text is
+Helvetica, which every PDF reader has and which text is measured with (ADR-10); a character it can't show prints as ? and is counted.
+
+### ADR-16: Cleanup works out everything first, and changes it in one Transaction
+
+`cleanup.plan` decides what goes, what's joined and which names are unused, without changing anything, so the command can show it; `cleanup.apply` makes exactly those
+changes in one Transaction, so one undo puts all of it back. Joined lines keep ends that were really there, never a worked-out point. A name from a DXF that the file's other
+parts name or point at by handle stays, because writing it back without it would leave the file pointing at nothing.
 
 ### ADR-6: `.draftworx` is the home format, and DXF is a working format
 
@@ -186,6 +209,8 @@ A hatch is its loops and its pattern. The pattern's lines are worked out from th
 | A mouse move, with what it paints | under 16 ms (measured 1 ms, offscreen) |
 | Offset a polyline of 10,000 pieces | measured 3.4 s round a ring, 1.8 s along a fine zigzag; an offset that's being previewed gives up after 0.15 s |
 | Find the room round a click, among 100,000 lines | measured 56 ms; a hatch being previewed gives up after 0.15 s |
+| A PDF of all of it on A0 | measured 1.5 s (3.8 MB) |
+| Work out what cleanup would do | measured 0.9 s |
 | A pan with everything in view | under 50 ms (measured 30 ms) |
 | Repaint zoomed in | measured 13 ms |
 | First paint after opening | measured 235 ms |

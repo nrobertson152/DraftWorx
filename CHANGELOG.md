@@ -16,4 +16,10 @@
 - Blocks with fields: make a block of what's selected, place copies and fill in their fields, change the values later, define a field (ATTDEF), and bring another drawing in as a block. A field on its own shows its tag.
 - The parts list a drawing's blocks make, from fields tagged PART_NO and the like, written as a BOM RevisionWorx reads.
 - `draftworx version`, `info`, `parts` and `convert`, for other programs: one JSON object out, like `revisionworx link`.
+- Sheets: choose a paper and the drawing's scale (1:50, 2:1, 1/4"=1'), and where the sheet goes, with Sheet. A border and title block with fields comes with it if you want one, and goes with the sheet.
+- Templates: a new drawing on ISO A4 to A0, Letter, Tabloid or ANSI C to E, with its border, layers and line types.
+- Print and Export PDF, to scale: a 1000 mm line at 1:50 is 20 mm on paper, checked by arithmetic, by another PDF reader and by measuring the printed page. A drawing printed without a sheet is given one round what's drawn. `draftworx pdf` does the same for other programs.
+- Cleanup: what's drawn twice, what has no size, lines that overlap, and names nothing uses, shown first and taken out in one undo step.
+- Bottom-aligned text sits on its point, as other programs place it. It was drawn a little low.
+- Where two curves cross twice closer together than can be told apart, the same point is found whichever is first.
 - DXF as a working format, R12 to 2018, text and binary. A file nobody changed comes back byte for byte, and what's changed is all that changes. What can't be edited yet, such as dimensions and hatches, is shown as far as it can be, kept, and said so. Export as R12 for machines that need it.

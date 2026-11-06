@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (QAbstractSpinBox, QApplication, QComboBox, QFileD
                                QPlainTextEdit, QPushButton, QToolButton, QVBoxLayout, QWidget)
 
 from .. import __version__
-from ..core import recovery
+from ..core import recovery, sheets
 from ..core.commands import COMMANDS, find
 from ..core.config import Config, save_config
 from ..core.dxf import VERSIONS
@@ -182,11 +182,18 @@ class MainWindow(QMainWindow):
         file = bar.addMenu("&File")
         self.actions_by_name: dict[str, QAction] = {}
         self._action(file, "New", self.new_drawing, QKeySequence.StandardKey.New, "new")
+        templates = file.addMenu("New from template")
+        for name in sheets.TEMPLATES:
+            a = templates.addAction(name)
+            a.triggered.connect(lambda _=False, n=name: self.new_from_template(n))
         self._action(file, "Open…", self.open_dialog, QKeySequence.StandardKey.Open, "open")
         self._action(file, "Save", self.save, QKeySequence.StandardKey.Save, "save")
         self._action(file, "Save as…", self.save_as, QKeySequence.StandardKey.SaveAs)
         file.addSeparator()
         self._action(file, "Insert a drawing…", self.insert_drawing_dialog, None, "insert")
+        file.addSeparator()
+        self._action(file, "Print…", self.print_dialog, QKeySequence.StandardKey.Print, "print")
+        self._action(file, "Export PDF…", self.export_pdf_dialog, QKeySequence("Ctrl+Shift+P"), "pdf")
         file.addSeparator()
         self._action(file, "Exit", self.close, QKeySequence.StandardKey.Quit)
         edit = bar.addMenu("&Edit")
@@ -220,7 +227,7 @@ class MainWindow(QMainWindow):
         groups: dict[str, list] = {}
         for info in COMMANDS.values():
             groups.setdefault(info.group, []).append(info)
-        for group in ("Draw", "Modify", "Annotate", "Blocks"):
+        for group in ("Draw", "Modify", "Annotate", "Blocks", "Output"):
             if group not in groups:
                 continue
             menu = bar.addMenu(group)
@@ -376,11 +383,15 @@ class MainWindow(QMainWindow):
                   Entry("New", "Start a new drawing", self.new_drawing, "Ctrl+N"), Entry("Save as", "Save under another name", self.save_as),
                   Entry("Export as DXF R12", "A copy in the oldest kind of DXF, for machines and programs that need it", self.export_r12),
                   Entry("Insert a drawing", "Bring another drawing in as a block, and place it", self.insert_drawing_dialog),
+                  Entry("Print", "Print the sheet, to scale", self.print_dialog, "Ctrl+P"),
+                  Entry("Export PDF", "The sheet as a PDF, to scale", self.export_pdf_dialog, "Ctrl+Shift+P"),
                   Entry("Show the whole drawing", "Zoom to fit", lambda: self.canvas.fit(), "Home"),
                   Entry("Select all", "Select everything", self.select_all, "Ctrl+A"), Entry("Undo", "Undo the last thing", self.undo, "Ctrl+Z"),
                   Entry("Redo", "Redo what was undone", self.redo, "Ctrl+Y")]
         for name, t in themes.THEMES.items():
             extras.append(Entry(f"Theme: {t['label']}", "Change how the program looks", lambda n=name: self.set_theme(n)))
+        for name in sheets.TEMPLATES:
+            extras.append(Entry(f"New: {name}", "A new drawing with a border and title block", lambda n=name: self.new_from_template(n)))
         dialog = Palette(self, self.session, extras)
         c = self.mapToGlobal(self.rect().center())
         dialog.move(c.x() - 260, self.mapToGlobal(self.rect().topLeft()).y() + 60)
@@ -480,6 +491,77 @@ class MainWindow(QMainWindow):
         if not Path(path).suffix:
             path += ".dxf" if "dxf" in chosen else ".draftworx"
         return self._save_to(path)
+
+    def new_from_template(self, name: str) -> None:
+        if not self._confirm_discard():
+            return
+        self._adopt(Opened(sheets.from_template(name)))
+        self.canvas.fit()
+        self._say(f"A new drawing on {name}. Draw at real size, and set the scale with Sheet.")
+
+    def _sheet_for_output(self) -> bool:
+        """A drawing printed without a sheet gets one: where its border is, or round what's drawn, on the usual paper, at the largest scale that
+        fits. Its own undo step."""
+        doc = self.session.doc
+        if sheets.sheet_of(doc) is not None:
+            return True
+        if sheets.drawn(doc) is None and sheets.frame_insert(doc) is None:
+            self._say("There's nothing to print yet.")
+            return False
+        with doc.transaction("Sheet") as t:
+            sheets.apply(t, sheets.first_sheet(doc))
+        self.canvas.redraw()
+        st = doc.settings
+        self._say(f"Fitted on {st.paper} across at {sheets.scale_words(st.annotation_scale)}. Change it with Sheet.")
+        return True
+
+    def export_pdf_dialog(self) -> bool:
+        if not self._sheet_for_output():
+            return False
+        suggested = str(self.opened.path.with_suffix(".pdf")) if self.opened.path else "Untitled.pdf"
+        path, _ = QFileDialog.getSaveFileName(self, "Export PDF", suggested, "PDF (*.pdf)")
+        if not path:
+            return False
+        if not Path(path).suffix:
+            path += ".pdf"
+        return self.export_pdf(path)
+
+    def export_pdf(self, path: str, black: bool = False) -> bool:
+        from ..core.pdf import pdf_of
+        from ..core.safefile import write_verified
+        doc = self.session.doc
+        data, notes = pdf_of(doc, sheets.sheet_of(doc), black, self.opened.path.stem if self.opened.path else "")
+
+        def verify(back: bytes) -> None:
+            if back != data:
+                raise ValueError("it read back differently")
+        try:
+            write_verified(Path(path), data, verify)
+        except SaveError as exc:
+            QMessageBox.warning(self, "DraftWorx", str(exc))
+            return False
+        self._say(" ".join([f"Exported {Path(path).name}.", *notes]))
+        return True
+
+    def print_dialog(self) -> bool:
+        from PySide6.QtPrintSupport import QPrintDialog, QPrinter
+        from .printing import page_layout, print_sheet
+        if not self._sheet_for_output():
+            return False
+        printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+        printer.setPageLayout(page_layout(sheets.sheet_of(self.session.doc)))
+        dialog = QPrintDialog(printer, self)
+        if dialog.exec() != QPrintDialog.DialogCode.Accepted:
+            return False
+        try:
+            left = print_sheet(self.session.doc, printer, printer.colorMode() == QPrinter.ColorMode.GrayScale)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "DraftWorx", str(exc))
+            return False
+        doc = self.session.doc
+        self._say(" ".join(["Sent to the printer."] + ([sheets.OFF_SHEET] if sheets.off_sheet(doc, sheets.sheet_of(doc)) else [])
+                           + (["Some blocks were placed so many times over that only part of them could be printed."] if left else [])))
+        return True
 
     def insert_drawing_dialog(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Insert a drawing", "", FILE_FILTER)

@@ -53,6 +53,8 @@ Every object has `id` and `type`. These are optional and default as shown: `laye
 
 **Hatches** fill what's inside an odd number of their `loops`. A pattern's sizes are millimetres on the sheet, multiplied by `scale`, turned by `angle` and started from `origin`. `lines` is the pattern's own definition when it isn't one the program knows, as from a DXF: one `[angle, [x, y], along, across, [dashes]]` per family of lines, as a pattern file has it. `seeds` are the points it was made from, and `refs` the ids of the objects round it that it follows. Something it names that isn't in the file is let go of on reading.
 
+**Settings** are the drawing's own: `units`, `linear_format`, `linear_decimals`, `angle_decimals`, `annotation_scale` (the n of its scale, 1:n), `ltscale`, `point_mode`, `point_size`, and, once it has a sheet (version 4), `paper` (`A4`, `A3`, `A2`, `A1`, `A0`, `Letter`, `Legal`, `Tabloid`, `ANSI C`, `ANSI D` or `ANSI E`), `landscape` and `sheet_at` (the sheet's lower-left corner in the drawing). The sheet is the paper's size times the scale (`sheets.py`). A drawing without a sheet writes none of the three.
+
 **Colours** are one integer: 1 to 255 is a colour index, 256 ByLayer, 0 ByBlock, and `16777216 + 0xRRGGBB` a true colour. **Weights** are in hundredths of a millimetre, or -1 ByLayer, -2 ByBlock, -3 default.
 
 `extras` and `source` hold what a DXF file said beyond the model, so it can be written back (`DXF.md`).
@@ -66,3 +68,5 @@ Every object has `id` and `type`. These are optional and default as shown: `laye
 **2** Adds `dimension`. A drawing without one is still written as version 1.
 
 **3** Adds `hatch`. A drawing without one is written as version 2 if it has dimensions, and otherwise as version 1.
+
+**4** Adds the sheet a drawing prints on: `paper`, `landscape` and `sheet_at` in `settings`. An older reader would open the drawing and lose its sheet without saying so, so a drawing with one is version 4. One without is written as before.

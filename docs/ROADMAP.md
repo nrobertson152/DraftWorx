@@ -11,7 +11,7 @@ Each stage ends with something that works and is tested on Windows and Linux in 
 | 4 | DXF read and write | done |
 | 5 | Modify: trim, extend, offset, fillet, chamfer, array, break, join, explode, stretch, match | done |
 | 6 | Annotation: text, one Dimension tool, associativity, hatch, blocks with attributes | done |
-| 7 | Print and PDF, sheets and templates, automatic cleanup | |
+| 7 | Print and PDF, sheets and templates, automatic cleanup | done |
 | 8 | RevisionWorx, OpenSchematix and OpenMeridian | |
 
 ## What each stage has to prove

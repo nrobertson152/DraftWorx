@@ -14,6 +14,13 @@ only goes up for a change that would break a program using this.
 | `info DRAWING` | what's in a `.draftworx` or DXF drawing | `path`, `format`, `dxf_version`, `units`, `scale`, `objects`, `kinds` (how many of each), `layers`, `blocks` (`name`, `placed`), `placed_blocks`, `extents`, `notices` |
 | `parts DRAWING [--csv FILE] [--number N] [--description D] [--revision R]` | the parts list the drawing's blocks make | `number`, `parts` (`number`, `description`, `quantity`, `unit`, `revision`, `references`, `blocks`), `problems` (`where`, `what`), `csv` |
 | `convert DRAWING OUTPUT [--dxf-version V] [--overwrite]` | write it as DXF or `.draftworx`, checked before it takes the name | `path`, `notes` (what had to be simplified to fit) |
+| `pdf DRAWING OUTPUT.pdf [--paper P] [--upright \| --across] [--scale S] [--black] [--overwrite]` | the drawing's sheet as a PDF, to scale | `path`, `paper`, `landscape`, `scale` (`1:50`), `sheet` (its box in the drawing), `notes` |
+
+**PDFs.** With none of `--paper`, `--upright`, `--across` or `--scale`, a drawing that has a sheet is printed on it, exactly as the window
+prints it. Otherwise, or when it has no sheet, a sheet is fitted round what's drawn: on `--paper` (or its own paper, or A3, or Tabloid for
+a drawing in inches or feet), across unless `--upright`, at `--scale` (`1:50`, `2:1`, `1/4"=1'`) or the largest standard scale that fits. Its
+border, if it has one, goes with it. The drawing itself isn't changed. `--black` prints everything in black. The same drawing gives the
+same PDF, so a revision control program can tell nothing changed.
 
 **Parts lists.** A placed block is a part when it has an attribute tagged `PART_NO` (or `PARTNO`, `PART_NUMBER`, `PART`, `PN`, `P/N`, `ITEM_NO`).
 It may also have `DESCRIPTION`, `QTY`, `UNIT`, `REV`, and `TAG` or `REF` naming this one (`Y1`). Each copy counts its `QTY`, or 1, once

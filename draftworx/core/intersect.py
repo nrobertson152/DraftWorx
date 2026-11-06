@@ -490,12 +490,15 @@ def _numeric(a, b, ex_a: bool, ex_b: bool) -> list[Hit]:
             if r is None:
                 continue
             found.append(_settle_tangency(A, B, r, eps))
-    # A tangency is only as sharp as the square root of rounding, so near-copies need a coarser test than a crossing.
+    # A tangency is only as sharp as the square root of rounding, so near-copies need a coarser test than a crossing. Which of a cluster is
+    # kept is decided by where it is, not by which curve was searched first, so swapping the curves finds the same points; then they're put
+    # back in order along the first curve.
     merged: list[tuple[float, float, Vec]] = []
     same = max(eps, size * 1e-7)
-    for r in found:
+    for r in sorted(found, key=lambda r: (r[2][0], r[2][1])):
         if not any(r[2].distance(m[2]) <= same for m in merged):
             merged.append(r)
+    merged.sort(key=lambda r: (r[0], r[1]))
     out: list[Hit] = []
     for ta, tb, p in merged:
         ca = _accept(a, A, ta, p, ex_a, eps)

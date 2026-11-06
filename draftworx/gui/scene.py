@@ -110,7 +110,7 @@ def text_path(t: Text, doc: Document) -> QPainterPath:
                 h *= fit
             width = d.length()
     dx = {0: 0.0, 1: -0.5, 2: -1.0, 3: 0.0, 4: -0.5, 5: 0.0}.get(t.halign, 0.0) * width
-    dy = {0: 0.0, 1: -0.25 * h, 2: -0.5 * h, 3: -h}.get(t.valign if t.halign != 4 else 2, 0.0)
+    dy = t.baseline_shift() * (h / t.height if t.height else 1.0)
     shear = math.tan(t.oblique)
     m = QTransform()
     m.translate(t.p[0], t.p[1])
