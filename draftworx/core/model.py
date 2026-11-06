@@ -14,8 +14,9 @@ from dataclasses import dataclass
 from typing import Callable, Iterable, Iterator
 
 from . import color as colors
+from . import dim as dims
 from .curves import Arc, Circle, EllipseArc, Polyline
-from .shapes import Foreign, Insert, Shape
+from .shapes import Dimension, Foreign, Insert, Shape
 from .spatial import SpatialIndex
 from .vec import BBox, Vec, bbox_union
 
@@ -199,7 +200,8 @@ MOST_SEGMENTS = ARC_SUB - 1
 
 def block_used_by(shape: Shape) -> str:
     """The block this shape draws, or an empty string."""
-    return shape.block if type(shape) is Insert or type(shape) is Foreign else ""
+    k = type(shape)
+    return shape.block if k is Insert or k is Foreign or k is Dimension else ""
 
 
 def index_key(entity_id: int, sub: int = 0) -> int:
@@ -258,6 +260,14 @@ class Transaction:
         return self
 
     def __exit__(self, kind, value, tb) -> bool:
+        if kind is None:
+            try:
+                self.doc._follow_up(self)
+            except BaseException:
+                self._open = False
+                self.doc._transaction = None
+                self.doc._apply_all(_reversed(list(self._changes.values())))
+                raise
         self._open = False
         self.doc._transaction = None
         if kind is not None:
@@ -385,6 +395,8 @@ class Document:
         self._layer_counts: dict[str, int] = {}
         self._block_counts: dict[str, int] = {}
         self._block_bbox: dict[str, tuple[BlockDef, BBox | None]] = {}
+        #: entity id -> the dimensions attached to it
+        self._dependents: dict[int, set[int]] = {}
         self._install_required()
 
     def _install_required(self) -> None:
@@ -508,10 +520,12 @@ class Document:
         if table == "entity":
             if old is not None:
                 self._unindex(old)
+                self._attach(old, False)
                 del self.entities[key]
             if new is not None:
                 self.entities[key] = new
                 self._index(new)
+                self._attach(new, True)
         elif table == "settings":
             self.settings = new
         else:
@@ -530,6 +544,75 @@ class Document:
                         self._locked_layers.add(key)
             elif table == "block":
                 self._block_changed(key)
+            elif table == "dimstyle":
+                self._dim_style_changed(key)
+
+    def _attach(self, e: Entity, on: bool) -> None:
+        """Keep track of which dimensions are attached to what."""
+        s = e.shape
+        if type(s) is not Dimension or not s.refs:
+            return
+        for ref in s.refs:
+            if ref is None:
+                continue
+            if on:
+                self._dependents.setdefault(ref[0], set()).add(e.id)
+            else:
+                found = self._dependents.get(ref[0])
+                if found is not None:
+                    found.discard(e.id)
+                    if not found:
+                        del self._dependents[ref[0]]
+
+    def attached_to(self, eid: int) -> set[int]:
+        """The dimensions attached to an object."""
+        return set(self._dependents.get(eid, ()))
+
+    def _follow_up(self, t: Transaction) -> None:
+        """Dimensions attached to something this change moved follow it, in the same step, so one undo puts both back."""
+        changed: set[int] = set()
+        for (table, key), c in list(t._changes.items()):
+            if table == "entity" and (c.old is None or c.new is None or c.old.shape != c.new.shape):
+                changed.add(key)
+        if not changed:
+            return
+        todo: set[int] = set()
+        for eid in changed:
+            todo |= self._dependents.get(eid, set())
+            e = self.entities.get(eid)
+            if e is not None and type(e.shape) is Dimension and e.shape.refs:
+                todo.add(eid)
+
+        def shape_of(i: int):
+            found = self.entities.get(i)
+            return found.shape if found is not None else None
+        for did in sorted(todo):
+            e = self.entities.get(did)
+            if e is None or type(e.shape) is not Dimension:
+                continue
+            followed = dims.follow(e.shape, shape_of, did in changed)
+            if followed is not None:
+                t.replace(did, followed)
+
+    def _dim_style_changed(self, key: str) -> None:
+        """A dimension style's sizes changed, so what its dimensions draw takes up a different space."""
+        for e in self.entities.values():
+            if type(e.shape) is Dimension and e.shape.style.casefold() == key:
+                box = self.shape_bbox(e.shape)
+                if box is not None:
+                    self.index.insert(index_key(e.id), box)
+
+    def dim_style_of(self, d: Dimension) -> DimStyle:
+        """The style a dimension is drawn with. One that's missing is drawn as Standard."""
+        return self.dim_styles.get(d.style) or self.dim_styles.get("Standard") or DimStyle("Standard")
+
+    def dimension_bbox(self, d: Dimension, _depth: int = 0) -> BBox | None:
+        box = d.bbox()
+        if d.block and self.blocks._d.get(d.block.casefold()) is not None:
+            return bbox_union(box, self.block_bbox(d.block, _depth))
+        for item in dims.drawn(d, self.dim_style_of(d)):
+            box = bbox_union(box, item.bbox())
+        return box
 
     def _block_changed(self, key: str) -> None:
         """A block's size changed, so everything placing it, directly or inside another block, is now somewhere else."""
@@ -569,7 +652,7 @@ class Document:
         elif k is Insert:
             self._block_counts[s.block.casefold()] = self._block_counts.get(s.block.casefold(), 0) + 1
             self.index.insert(index_key(eid, CENTRE_SUB), (s.p[0], s.p[1], s.p[0], s.p[1]))
-        elif k is Foreign and s.block:
+        elif (k is Foreign or k is Dimension) and s.block:
             self._block_counts[s.block.casefold()] = self._block_counts.get(s.block.casefold(), 0) + 1
 
     def _unindex(self, e: Entity) -> None:
@@ -638,6 +721,8 @@ class Document:
             return self.insert_bbox(s)
         if type(s) is Foreign:
             return self.foreign_bbox(s)
+        if type(s) is Dimension:
+            return self.dimension_bbox(s)
         return s.bbox()
 
     def foreign_bbox(self, s: Foreign, _depth: int = 0) -> BBox | None:
@@ -665,6 +750,8 @@ class Document:
                 b = self.insert_bbox(s, _depth + 1)
             elif type(s) is Foreign:
                 b = self.foreign_bbox(s, _depth + 1)
+            elif type(s) is Dimension:
+                b = self.dimension_bbox(s, _depth + 1)
             else:
                 b = s.bbox()
             box = bbox_union(box, b)

@@ -28,7 +28,8 @@ draftworx/
     select, grips, info, layers what's under the cursor, handles, live measurements
     config, recovery, files     settings, unsaved work, opening and saving
     ops/                        trim, extend, offset, fillet, cleanup and the like
-    dim, hatch, display         what dimensions and hatches draw
+    dim                         what a dimension measures, says and draws, and how it follows what it's attached to
+    hatch, display              what hatches draw
   gui/             PySide6. Thin: it forwards events and paints what the core says.
   integrations/    RevisionWorx, OpenSchematix, OpenMeridian, through their files and command lines
   cli              `draftworx`, one JSON object per command for other programs
@@ -153,6 +154,14 @@ It costs memory, about the size of the file, and it means two descriptions of ea
 A polyline's offset is each piece moved over, with every corner on the outside rounded round the vertex. Then each piece keeps exactly the parts that are at least the distance from the whole of the original. That's decided by measuring against the pieces near it, nearest first, cutting it wherever it meets something that's exactly the distance from one of them and testing between the cuts, so it holds even where the path crosses itself, comes back to the same point or has arcs so flat they're nearly lines. Only after that do straight sides carry on to meet in sharp corners, and only where the corner they make stays far enough away, which carrying on mostly does, because it moves away from the corner it goes round.
 
 *Challenged:* making the sharp corners first, as most programs do, and then removing the loops this makes. That's simpler to write, but a corner carried on into the wrong place is then hard to tell from a loop, and a stretch closer than the distance was left behind in random tests. Here random tests check, at many points along every piece, that nothing is closer than the distance and that nothing far enough is missing.
+
+### ADR-13: A dimension holds what it measures, and follows it inside the Transaction
+
+A dimension is a few points and where it goes. Its lines, arrows and text are worked out from those and its style each time they're needed, so what it shows can't disagree with what it measures, and a style change redraws every dimension that uses it. What it measures from can be attached to another object's point by name (an end, a centre, a polyline's corner), and the document keeps an index from each object to the dimensions attached to it.
+
+When a Transaction finishes, any dimension attached to something it changed is updated before the step is recorded, so the move and the dimension's following it are one undo step, and undo can't separate them. A dimension changed in the same step isn't moved again; it lets go of whatever it no longer sits on, which is how moving or copying a dimension on its own leaves it unattached, and moving it with what it measures keeps it attached, without either command knowing about dimensions.
+
+*Challenged:* AutoCAD's way, a separate associativity object watching the geometry through reactors. That's more general (it can watch an intersection), but it's a second place that has to be kept right on every change, undo and file trip. *Given up:* DXF files don't carry the attachment (DXF.md).
 
 ## What's measured, and what it should stay under
 

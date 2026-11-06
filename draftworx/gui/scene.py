@@ -17,8 +17,9 @@ from ..core import color as colors
 from ..core.curves import Arc, Circle, EllipseArc, Line, Polyline, Spline
 from ..core.model import BYBLOCK_TYPE, BYLAYER_TYPE, WEIGHT_BYBLOCK, WEIGHT_BYLAYER, WEIGHT_DEFAULT, Document, Entity, Style
 from ..core.ops.reshape import inside
-from ..core.shapes import AttDef, Foreign, Insert, MText, Node, Solid, Text
-from ..core.vec import IDENTITY, Affine, BBox, bbox_union
+from ..core import dim as dims
+from ..core.shapes import AttDef, Dimension, Foreign, Insert, MText, Node, Solid, Text
+from ..core.vec import IDENTITY, Affine, BBox, Vec, bbox_union
 
 CHUNK = 2000            # things to a chunk: small enough that an edit is quick, big enough that culling stays cheap
 MOST_PIECES = 1_000_000 # of one object: blocks in blocks in arrays can multiply past anything memory or patience could hold
@@ -307,6 +308,13 @@ class Scene:
                 out.setdefault(look, []).extend((c, m) for c in s.curves)
             if s.block:
                 self._walk(Insert(s.block, s.at), style, parent, m, out, depth)
+            return
+        if k is Dimension:
+            if s.block and self.doc.blocks.get(s.block) is not None:
+                self._walk(Insert(s.block, Vec(0.0, 0.0)), style, parent, m, out, depth)     # as the file drew it, while it's unchanged
+                return
+            for item in dims.drawn(s, self.doc.dim_style_of(s)):
+                self._walk(item, style, parent, m, out, depth)
             return
         if k is Insert:
             if depth >= 16:

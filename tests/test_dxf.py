@@ -26,9 +26,9 @@ from draftworx.core.model import BlockDef, Document, Entity, Layer, Linetype, St
 from draftworx.core.native import FormatError, dumps, loads  # noqa: E402
 from draftworx.core.safefile import SaveError  # noqa: E402
 from draftworx.core.select import curves_of, pick  # noqa: E402
-from draftworx.core.shapes import AttDef, Attrib, Foreign, Insert, MText, Node, Solid, Text  # noqa: E402
+from draftworx.core.shapes import AttDef, Attrib, Dimension, Foreign, Insert, MText, Node, Solid, Text  # noqa: E402
 from draftworx.core.snap import Kind, SnapEngine, SnapQuery  # noqa: E402
-from draftworx.core.vec import TAU, Vec  # noqa: E402
+from draftworx.core.vec import TAU, Affine, Vec  # noqa: E402
 from driver import Person, line  # noqa: E402
 from geom_strategies import coord  # noqa: E402
 
@@ -762,27 +762,28 @@ class TestSeenFromBehind:
 
 
 class TestWhatCantBeEdited:
-    def test_a_dimension_draws_through_its_block(self):
+    def test_a_dimension_can_be_changed_and_its_block_draws_it_till_it_is(self):
         _, mine = by_kind()
-        dim = next(e for e in of_type(mine, Foreign) if e.shape.dxf_type == "DIMENSION")
+        dim = of_type(mine, Dimension)[0]
         assert dim.shape.block.startswith("*D")
         assert mine.block_use(dim.shape.block) >= 1
         assert mine.shape_bbox(dim.shape) is not None
         assert any(type(c) is Line for c in curves_of(mine, dim))
+        assert dim.shape.transformed(Affine.translation(5.0, 0.0)).block == ""
 
-    def test_a_dimension_block_placed_somewhere_else(self):
+    def test_a_dimension_placed_away_from_its_block_stays_as_the_file_had_it(self):
         doc = ezdxf.new("R2013")
         doc.modelspace().add_linear_dim(base=(0, 10), p1=(0, 0), p2=(10, 0)).render()
-        data = encoded(doc).replace(b" 12\n0.0\n 22\n0.0", b" 12\n100.0\n 22\n0.0", 1)
+        data = encoded(doc).replace(b"  3\nStandard\n 10\n", b"  3\nStandard\n 12\n100.0\n 22\n0.0\n 10\n", 1)
         mine, _ = read_strict(data)
         dim = of_type(mine, Foreign)[0]
-        if dim.shape.at == (100.0, 0.0):
-            assert mine.shape_bbox(dim.shape)[0] >= 99.0
-            assert all(min(c.bbox()[0], c.bbox()[2]) >= 99.0 for c in curves_of(mine, dim))
+        assert dim.shape.dxf_type == "DIMENSION" and dim.shape.at == (100.0, 0.0)
+        assert mine.shape_bbox(dim.shape)[0] >= 99.0
+        assert all(min(c.bbox()[0], c.bbox()[2]) >= 99.0 for c in curves_of(mine, dim))
 
     def test_a_block_a_dimension_uses_cant_be_removed(self):
         _, mine = by_kind()
-        dim = next(e for e in of_type(mine, Foreign) if e.shape.dxf_type == "DIMENSION")
+        dim = of_type(mine, Dimension)[0]
         with pytest.raises(Exception, match="still used"):
             with mine.transaction("x") as t:
                 t.remove_block(dim.shape.block)
@@ -907,7 +908,7 @@ class TestWhatCantBeEdited:
         doc.modelspace().add_linear_dim(base=(0, 110), p1=(0, 100), p2=(100, 100)).render()
         mine, _ = read_strict(encoded(doc))
         leader = next(e for e in of_type(mine, Foreign) if e.shape.dxf_type == "LEADER")
-        dim = next(e for e in of_type(mine, Foreign) if e.shape.dxf_type == "DIMENSION")
+        dim = of_type(mine, Dimension)[0]
         assert pick(mine, Vec(25.0, 25.0), 1.0) == [leader.id]
         assert pick(mine, Vec(50.0, 110.0), 1.0) == [dim.id]
         engine = SnapEngine(mine)
@@ -1170,6 +1171,100 @@ class TestANewFile:
         assert v.dxf.height >= box[3] - box[1]
 
 
+def all_dimensions() -> Document:
+    """One of each kind, and one with its own size and text."""
+    doc = Document()
+    with doc.transaction("x") as t:
+        t.add(Dimension("linear", (Vec(0.0, 0.0), Vec(100.0, 0.0)), Vec(50.0, 20.0)))
+        t.add(Dimension("linear", (Vec(100.0, 0.0), Vec(100.0, 40.0)), Vec(120.0, 20.0), math.pi / 2.0))
+        t.add(Dimension("aligned", (Vec(0.0, 0.0), Vec(30.0, 40.0)), Vec(-10.0, 30.0), scale=2.0))
+        t.add(Dimension("radius", (Vec(200.0, 0.0), Vec(208.0, 6.0)), Vec(224.0, 18.0)))
+        t.add(Dimension("diameter", (Vec(300.0, 0.0), Vec(306.0, 8.0)), Vec(303.0, 4.0), text="<> TYP"))
+        t.add(Dimension("angular", (Vec(0.0, 0.0), Vec(10.0, 0.0), Vec(0.0, 0.0), Vec(0.0, 10.0)), Vec(20.0, 20.0)))
+        t.add(Dimension("angular", (Vec(500.0, 0.0), Vec(510.0, 0.0), Vec(500.0, 10.0)), Vec(505.0, 5.0)))
+    return doc
+
+
+def same_drawing(a: Document, b: Document, eps: float = 1e-9) -> bool:
+    """Do two drawings' dimensions draw the same, piece for piece?"""
+    from draftworx.core import dim as dims
+    for x, y in zip(of_type(a, Dimension), of_type(b, Dimension)):
+        p, q = dims.drawn(x.shape, a.dim_style_of(x.shape)), dims.drawn(replace(y.shape, block=""), b.dim_style_of(y.shape))
+        if len(p) != len(q):
+            return False
+        for g, h in zip(p, q):
+            if type(g) is not type(h):
+                return False
+            if type(g) is Text:
+                if g.text != h.text or not close(g.p, h.p, eps) or abs(g.rotation - h.rotation) > eps:
+                    return False
+            elif not all(abs(u - v) <= eps for u, v in zip(g.bbox(), h.bbox())):
+                return False
+    return True
+
+
+class TestDimensions:
+    @pytest.mark.parametrize("version", ["AC1009", "AC1015", "AC1027"])
+    def test_they_go_out_as_dimensions_and_come_back_the_same(self, version):
+        doc = all_dimensions()
+        data, report = encode_dxf(doc, version)
+        assert not report.converted and not report.lost
+        check_written(data, doc, report)
+        theirs = assert_clean(data)
+        from draftworx.core import dim as dims
+        written = list(theirs.modelspace().query("DIMENSION"))
+        assert len(written) == 7
+        for d, e in zip(written, of_type(doc, Dimension)):
+            m = d.get_measurement()
+            want = dims.measurement(e.shape)
+            assert (math.radians(m) if e.shape.measure == "angular" else m) == pytest.approx(want, abs=1e-9)
+            assert d.dxf.geometry in theirs.blocks
+        back, _ = read_strict(data)
+        assert [e.shape.measure for e in of_type(back, Dimension)] == [e.shape.measure for e in of_type(doc, Dimension)]
+        assert all(e.shape.block for e in of_type(back, Dimension))
+        assert same_drawing(doc, back)
+        assert write_dxf(back, version) == data
+
+    def test_its_own_size_goes_as_an_override_of_its_style(self):
+        data = write_dxf(all_dimensions())
+        theirs = assert_clean(data)
+        sizes = [d.override().get("dimscale") for d in theirs.modelspace().query("DIMENSION")]
+        assert sizes[2] == 2.0
+        back, _ = read_strict(data)
+        assert of_type(back, Dimension)[2].shape.scale == 2.0
+
+    def test_symbols_go_as_a_file_spells_them(self):
+        data = write_dxf(all_dimensions())
+        assert b"%%c" in data and b"%%d" in data
+        back, _ = read_strict(data)
+        from draftworx.core import dim as dims
+        assert dims.label(of_type(back, Dimension)[4].shape, back.dim_style_of(of_type(back, Dimension)[4].shape)) == "Ø20 TYP"
+
+    def test_one_from_a_file_that_was_changed_gets_a_block_of_its_own(self):
+        _, mine = by_kind()
+        dim = of_type(mine, Dimension)[0]
+        old = dim.shape.block
+        with mine.transaction("Move") as t:
+            t.replace(dim.id, dim.shape.transformed(Affine.translation(0.0, 5.0)))
+        data = write_dxf(mine)
+        theirs = assert_clean(data)
+        written = [d for d in theirs.modelspace().query("DIMENSION")]
+        assert len(written) == 1 and written[0].dxf.geometry != old
+        assert written[0].dxf.handle == dim.source.text.split("\n")[3].strip()      # the same object, with the same handle
+        drawn = theirs.blocks[written[0].dxf.geometry]
+        assert {e.dxftype() for e in drawn} >= {"LINE", "SOLID", "TEXT"}
+        assert old in theirs.blocks
+        check_written(data, mine)
+
+    def test_one_from_a_file_that_wasnt_changed_is_written_as_it_was(self):
+        source = encoded(everything("R2013"))
+        mine, _ = read_strict(source)
+        with mine.transaction("x") as t:
+            t.add(line(0, 0, 1, 1))
+        changed = changed_lines(source, write_dxf(mine))
+        assert not any("DIMENSION" in c for c in changed)
+
+
 class TestAnotherVersion:
     def test_r12_writes_what_r12_has_and_says_so(self):
         data, report = encode_dxf(a_drawing(), "AC1009")
@@ -1196,9 +1291,10 @@ class TestAnotherVersion:
         assert theirs.dxfversion == "AC1015"
         m = theirs.modelspace()
         assert m.query("LINE") and m.query("LWPOLYLINE") and m.query("SPLINE") and m.query("MTEXT")
-        # a dimension can't go, but what it draws can
-        assert any(i.dxf.name.startswith("*D") for i in m.query("INSERT"))
-        assert any("dimension" in s for s in report.sentences())
+        # a dimension goes as itself, drawn by the block it came with
+        dims_written = m.query("DIMENSION")
+        assert dims_written and all(d.dxf.geometry in theirs.blocks for d in dims_written)
+        assert not any("dimension" in s for s in report.sentences())
         assert any("xline" in s or "ray" in s for s in report.sentences())
         check_written(data, doc, report)
 

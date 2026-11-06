@@ -17,10 +17,11 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import Iterable
 
+from . import dim as dims
 from .curves import Arc, Circle, EllipseArc, Line, Polyline, Spline
 from .intersect import intersect
 from .model import ARC_SUB, CENTRE_SUB, Document, Entity, index_key, polyline_entries, split_key
-from .shapes import AttDef, Foreign, Insert, MText, Node, Solid, Text
+from .shapes import AttDef, Dimension, Foreign, Insert, MText, Node, Solid, Text
 from .spatial import SpatialIndex
 from .vec import IDENTITY, Affine, Vec, near, polar, tol
 
@@ -335,6 +336,24 @@ class SnapEngine:
                 points.append((m.apply(p) if moved else p, Kind.ENDPOINT, owner))
         elif k is Foreign:
             self._foreign(s, owner, name, m, window, curves, points, depth)
+        elif k is Dimension:
+            self._dimension(s, owner, name, m, window, curves, points, depth)
+
+    def _dimension(self, s: Dimension, owner: int, name: tuple, m: Affine, window, curves, points, depth: int) -> None:
+        """A dimension's lines can be snapped to, and the points it measures are nodes, as in other programs."""
+        moved = m is not IDENTITY
+        for p in s.pts:
+            points.append((m.apply(p) if moved else p, Kind.NODE, owner))
+        if s.block and self.doc.blocks.get(s.block) is not None:
+            self._insert(Insert(s.block, Vec(0.0, 0.0)), owner, name, m, window, curves, points, depth)
+            return
+        x0, y0, x1, y1 = window
+        for i, item in enumerate(dims.drawn(s, self.doc.dim_style_of(s))):
+            if type(item) is Line or type(item) is Arc:
+                seg = item.transformed(m) if moved else item
+                b = seg.bbox()
+                if b[0] <= x1 and b[2] >= x0 and b[1] <= y1 and b[3] >= y0:
+                    self._curve_entry(seg, owner, name + (i,), curves, points)
 
     def _foreign(self, s: Foreign, owner: int, name: tuple, m: Affine, window, curves, points, depth: int) -> None:
         """What's drawn of something from a file that can't be edited here can still be snapped to."""

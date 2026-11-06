@@ -4,7 +4,7 @@ DraftWorx is deliberately small. A simple result mustn't look like an exact one,
 
 ## Not there yet
 
-This is early. You can draw lines, polylines, rectangles, circles, arcs, ellipses, points and text, select them, drag their handles, move, copy, rotate, scale, mirror and erase them, trim, extend, offset, fillet, chamfer, array, break, join, explode and stretch them, match one's look to another's, and open and save DXF as well as `.draftworx`. Nothing else yet: no dimensions, hatch, block creation or printing. See `ROADMAP.md`.
+This is early. You can draw lines, polylines, rectangles, circles, arcs, ellipses, points and text, select them, drag their handles, move, copy, rotate, scale, mirror and erase them, trim, extend, offset, fillet, chamfer, array, break, join, explode and stretch them, match one's look to another's, dimension them, and open and save DXF as well as `.draftworx`. Nothing else yet: no hatch, block creation or printing. See `ROADMAP.md`.
 
 ## Changing things
 
@@ -14,6 +14,14 @@ This is early. You can draw lines, polylines, rectangles, circles, arcs, ellipse
 - While the pointer moves, an offset that takes more than a moment to work out, as one of a polyline with thousands of pieces can, isn't previewed. Clicking still makes it.
 - **Fillet** works on lines, arcs and circles and the corners of a polyline. **Chamfer** works on straight lines and a polyline's straight corners. Two different polylines can't be filleted together.
 - **Join** joins lines, arcs and open polylines that meet end to end. Ellipses and splines aren't joined.
+
+## Dimensions
+
+- One tool measures lengths (across, up, along or at an angle), radii, diameters and angles. There are no ordinate, arc-length, baseline or chained dimensions, and no tolerances or alternate units.
+- A dimension follows what it's attached to: the ends of a line or arc, a polyline's corners, a circle's centre and size. Not where two things cross, which isn't one object's point, and not a point on a curve chosen freely. Moving or copying a dimension on its own lets go, as does dragging one of its points.
+- What it's attached to is kept in `.draftworx` files only, not in DXF (`DXF.md`).
+- Dimension styles from a file are used as far as their sizes, rounding, units and text placement go. Their arrowhead blocks, colours, text boxes and fit options aren't: arrows are filled, or ticks.
+- When there's no room between the arrows they go outside, but the text stays in the middle, where it can overlap them.
 
 ## DXF
 

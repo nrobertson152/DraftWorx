@@ -18,7 +18,7 @@ from draftworx.core.config import Config  # noqa: E402
 from draftworx.core.curves import Circle, Line, Polyline  # noqa: E402
 from draftworx.core.files import open_drawing  # noqa: E402
 from draftworx.core.model import BlockDef, Entity, Layer, Linetype, Style  # noqa: E402
-from draftworx.core.shapes import Insert, Solid, Text  # noqa: E402
+from draftworx.core.shapes import Dimension, Insert, Solid, Text  # noqa: E402
 from draftworx.core.vec import Vec  # noqa: E402
 from draftworx.gui import theme as themes  # noqa: E402
 from draftworx.gui.palette import Entry, Palette  # noqa: E402
@@ -125,6 +125,20 @@ class TestChanging:
         hand.click(140, 50)
         assert line(20, 50, 100, 50) in [e.shape for e in hand.doc.entities.values()]
         hand.enter()
+
+    def test_a_dimension_by_pointing(self, hand):
+        add(hand, line(20, 50, 180, 50))
+        hand.s.run("DIM")
+        hand.click(60, 50)
+        hand.move(60, 80)
+        assert hand.s.ghosts and type(hand.s.ghosts[0]) is Dimension
+        hand.click(60, 80).enter()
+        (d,) = [e.shape for e in hand.doc.entities.values() if type(e.shape) is Dimension]
+        assert d.refs and d.measure in ("linear", "aligned")
+        hand.move(5, 5)     # off it, so it isn't shown as what the pointer's over
+        ink = hand.w.theme.canvas["ink"]
+        assert hand.has_color_near(100, 80, ink)                     # the dimension line
+        assert hand.has_color_near(100, 80 + 0.625 + 1.25, ink, 4)   # its text, just above it
 
     def test_an_offset_is_shown_before_it_is_made(self, hand):
         add(hand, line(20, 50, 180, 50))
@@ -581,7 +595,7 @@ class TestWindow:
 
     def test_the_rail_has_the_everyday_changes(self, hand):
         tips = [b.toolTip() for b in hand.w.rail.findChildren(QToolButton)]
-        for start in ("Trim (TR)", "Offset (O)", "Fillet (F)"):
+        for start in ("Trim (TR)", "Offset (O)", "Fillet (F)", "Dimension (DIM)"):
             assert any(t.startswith(start) for t in tips), start
 
     def test_the_rail_runs_commands(self, hand):

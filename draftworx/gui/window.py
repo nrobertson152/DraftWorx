@@ -30,8 +30,9 @@ from .panel import ContextPanel
 
 FILE_FILTER = "Drawings (*.draftworx *.dxf);;DraftWorx drawings (*.draftworx);;DXF files (*.dxf)"
 SAVE_FILTER = "DraftWorx drawing (*.draftworx);;DXF file (*.dxf)"
-RAIL = (("Draw", ("LINE", "PLINE", "RECTANGLE", "CIRCLE", "ARC", "ELLIPSE", "TEXT")),
-        ("Modify", ("MOVE", "COPY", "ROTATE", "SCALE", "MIRROR", "TRIM", "OFFSET", "FILLET", "ERASE")))
+RAIL = (("Draw", ("LINE", "PLINE", "RECTANGLE", "CIRCLE", "ARC", "ELLIPSE")),
+        ("Modify", ("MOVE", "COPY", "ROTATE", "SCALE", "MIRROR", "TRIM", "OFFSET", "FILLET", "ERASE")),
+        ("Annotate", ("TEXT", "DIMENSION")))
 AUTOSAVE_MS = 60_000
 
 

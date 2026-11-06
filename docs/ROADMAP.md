@@ -10,7 +10,7 @@ Each stage ends with something that works and is tested on Windows and Linux in 
 | 3 | Window, canvas, commands, typed input, selection and grips, layers, properties, command search, crash recovery | done |
 | 4 | DXF read and write | done |
 | 5 | Modify: trim, extend, offset, fillet, chamfer, array, break, join, explode, stretch, match | done |
-| 6 | Annotation: text, one Dimension tool, associativity, hatch, blocks with attributes | |
+| 6 | Annotation: text, one Dimension tool, associativity, hatch, blocks with attributes | dimensions done |
 | 7 | Print and PDF, sheets and templates, automatic cleanup | |
 | 8 | RevisionWorx, OpenSchematix and OpenMeridian | |
 

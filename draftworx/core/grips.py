@@ -5,9 +5,12 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from dataclasses import replace
+
+from . import dim as dims
 from .curves import Arc, Circle, EllipseArc, Line, Polyline, Spline
 from .geometry import arc_through
-from .shapes import AttDef, Insert, MText, Node, Solid, Text
+from .shapes import AttDef, Dimension, Insert, MText, Node, Solid, Text
 from .vec import TAU, Affine, Vec
 
 
@@ -20,8 +23,18 @@ class Grip:
     base: Vec | None = None
 
 
-def grips_of(s) -> list[Grip]:
+def grips_of(s, style=None) -> list[Grip]:
+    """`style` is a dimension's style, for where its text is."""
     k = type(s)
+    if k is Dimension:
+        out = [Grip(p, "dimpoint", i) for i, p in enumerate(s.pts)] + [Grip(s.at, "dimline", 0)]
+        box = dims.text_box(s, style) if style is not None and not s.block else None
+        if s.text_at is not None:
+            out.append(Grip(s.text_at, "dimtext", 0))
+        elif box is not None:
+            o, a, u = box
+            out.append(Grip(o + a * 0.5 + u * 0.5, "dimtext", 0))
+        return out
     if k is Line:
         return [Grip(s.a, "end", 0, s.b), Grip(s.b, "end", 1, s.a), Grip(s.a.midpoint(s.b), "move", 0, s.a.midpoint(s.b))]
     if k is Arc:
@@ -57,6 +70,21 @@ def moved(s, g: Grip, p: Vec):
     if role == "move":
         d = p - g.point
         return s.transformed(Affine.translation(d[0], d[1]))
+    if k is Dimension:
+        if role == "dimline":
+            if s.measure in ("radius", "diameter") and p != s.pts[0]:
+                # its point on the curve goes round with it, as that's where it's drawn
+                c = s.pts[0]
+                return replace(s, at=p, pts=(c, c + (p - c).unit() * c.distance(s.pts[1])), block="")
+            return replace(s, at=p, block="")
+        if role == "dimtext":
+            return replace(s, text_at=p, block="")
+        pts = list(s.pts)
+        pts[g.index] = p
+        try:
+            return replace(s, pts=tuple(pts), block="")     # it no longer sits on what it was attached to there, so it lets go of it
+        except ValueError:
+            return s
     if k is Line:
         return Line(p, s.b) if g.index == 0 else Line(s.a, p)
     if k is Arc:
