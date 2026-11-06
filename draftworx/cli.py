@@ -52,7 +52,17 @@ def self_test() -> int:
     if not (pdf.startswith(b"%PDF-1.4") and b"/MediaBox [0 0 841.8898 595.2756]" in pdf and pdf.endswith(b"%%EOF\n")):
         print("self-test failed: a PDF of the drawing didn't come out as it should", file=sys.stderr)
         return 1
-    print(f"{PROGRAM} self-test passed: drawing, saving, reading back, undo, DXF and PDF all work.")
+    import xml.etree.ElementTree as ET
+    from .core.svg import svg_of
+    svg, _ = svg_of(doc, sheets.sheet_of(doc))
+    try:
+        root = ET.fromstring(svg)
+    except ET.ParseError:
+        root = None
+    if root is None or (root.get("width"), root.get("height")) != ("297mm", "210mm"):
+        print("self-test failed: an SVG of the drawing didn't come out as it should", file=sys.stderr)
+        return 1
+    print(f"{PROGRAM} self-test passed: drawing, saving, reading back, undo, DXF, PDF and SVG all work.")
     try:
         from .gui.app import self_test as window_test
     except ImportError:
@@ -165,16 +175,26 @@ def _convert(args) -> dict:
 
 
 def _pdf(args) -> dict:
+    from .core.pdf import pdf_of
+    return _sheet_file(args, ".pdf", pdf_of)
+
+
+def _svg(args) -> dict:
+    from .core.svg import svg_of
+    return _sheet_file(args, ".svg", svg_of)
+
+
+def _sheet_file(args, suffix: str, make) -> dict:
+    """A PDF or SVG of the drawing's sheet: the same sheet, chosen the same way, for either."""
     from pathlib import Path as _Path
 
     from .core import sheets
-    from .core.pdf import pdf_of
     from .core.safefile import SaveError, write_verified
     opened = _open(args.drawing)
     doc = opened.doc
     target = _Path(args.output)
-    if target.suffix.casefold() != ".pdf":
-        raise _Refused("The new file's name has to end in .pdf.")
+    if target.suffix.casefold() != suffix:
+        raise _Refused(f"The new file's name has to end in {suffix}.")
     if target.exists() and not args.overwrite:
         raise _Refused(f"{target.name} is already there. Add --overwrite to replace it.", "exists")
     if args.upright and args.across:
@@ -198,7 +218,7 @@ def _pdf(args) -> dict:
         with doc.transaction("Sheet") as t:
             sheets.apply(t, sheets.fitted(doc, paper, landscape, n))
     sheet = sheets.sheet_of(doc)
-    data, notes = pdf_of(doc, sheet, args.black, target.stem)
+    data, notes = make(doc, sheet, args.black, target.stem)
 
     def verify(back: bytes) -> None:
         if back != data:
@@ -217,6 +237,7 @@ COMMANDS = {
     "parts": ("the parts list its blocks make, and optionally write it as a BOM that RevisionWorx reads", _parts),
     "convert": ("write a drawing as DXF or .draftworx, checked before it takes the name", _convert),
     "pdf": ("the drawing's sheet as a PDF, to scale: its own sheet, or one fitted to what's drawn when it has none or one is asked for", _pdf),
+    "svg": ("the drawing's sheet as an SVG in millimetres, to scale, chosen as for pdf", _svg),
 }
 
 
@@ -224,14 +245,14 @@ def run_command(argv: list[str]) -> int:
     """One of the commands for other programs. Always one JSON object out."""
     name = argv[0]
     parser = argparse.ArgumentParser(prog=f"draftworx {name}", description=COMMANDS[name][0])
-    if name in ("info", "parts", "convert", "pdf"):
+    if name in ("info", "parts", "convert", "pdf", "svg"):
         parser.add_argument("drawing")
     if name == "parts":
         parser.add_argument("--csv", help="write the parts list here, as a RevisionWorx BOM")
         parser.add_argument("--number", help="the drawing's own part or assembly number (default: its file name)")
         parser.add_argument("--description", default="")
         parser.add_argument("--revision", default="")
-    if name == "pdf":
+    if name in ("pdf", "svg"):
         parser.add_argument("output")
         parser.add_argument("--paper", help="A4, A3, A2, A1, A0, Letter, Legal, Tabloid, ANSI C, ANSI D or ANSI E")
         parser.add_argument("--upright", action="store_true", help="the paper upright")

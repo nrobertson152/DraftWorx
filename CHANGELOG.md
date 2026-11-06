@@ -19,6 +19,7 @@
 - Sheets: choose a paper and the drawing's scale (1:50, 2:1, 1/4"=1'), and where the sheet goes, with Sheet. A border and title block with fields comes with it if you want one, and goes with the sheet.
 - Templates: a new drawing on ISO A4 to A0, Letter, Tabloid or ANSI C to E, with its border, layers and line types.
 - Print and Export PDF, to scale: a 1000 mm line at 1:50 is 20 mm on paper, checked by arithmetic, by another PDF reader and by measuring the printed page. A drawing printed without a sheet is given one round what's drawn. `draftworx pdf` does the same for other programs.
+- Export SVG: the sheet in millimetres, to scale, with real text, for Inkscape, browsers and laser cutters' software. `draftworx svg` for other programs.
 - Cleanup: what's drawn twice, what has no size, lines that overlap, and names nothing uses, shown first and taken out in one undo step.
 - Bottom-aligned text sits on its point, as other programs place it. It was drawn a little low.
 - Where two curves cross twice closer together than can be told apart, the same point is found whichever is first.

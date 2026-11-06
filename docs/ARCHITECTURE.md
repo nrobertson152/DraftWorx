@@ -30,7 +30,7 @@ draftworx/
     ops/                        trim, extend, offset, fillet, cleanup and the like
     dim                         what a dimension measures, says and draws, and how it follows what it's attached to
     regions, hatch              the area round a point, and what a hatch draws there
-    sheets, printing, pdf       the sheet and its border, what a sheet prints, and a PDF of it with no Qt
+    sheets, printing, pdf, svg  the sheet and its border, what a sheet prints, and a PDF or SVG of it with no Qt
     cleanup                     what's drawn twice, has no size, overlaps, or is named and unused
   gui/             PySide6. Thin: it forwards events and paints what the core says.
   integrations/    the family's programs, only through their files and command lines: revisionworx (status, check-out, check-in, BOMs)
@@ -181,7 +181,7 @@ A hatch is its loops and its pattern. The pattern's lines are worked out from th
 ### ADR-15: One walk of the drawing prints it, for a PDF and for a printer
 
 `printing.py` turns a sheet into strokes, fills, dots and text in millimetres on the paper, through one transform, and hands them to a page. The PDF writer (`pdf.py`,
-standard library only) and the window's printer (`gui/printing.py`, Qt) are two pages, so what they print can't differ, and the PDF, which is what's tested, stands for
+standard library only), the SVG writer (`svg.py`, the same) and the window's printer (`gui/printing.py`, Qt) are three pages, so what they print can't differ, and the PDF, which is what's tested, stands for
 both. The PDF's numbers are points to a ten-thousandth, so a length on paper is the drawing's divided by its scale to within 36 nanometres; it has no date in it, so the
 same drawing gives the same file.
 

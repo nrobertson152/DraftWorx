@@ -53,6 +53,7 @@ This is early. You can draw lines, polylines, rectangles, circles, arcs, ellipse
 - All text prints in Helvetica, which every PDF reader has and which text is measured with. SHX and TrueType fonts named by a style aren't used. A character Helvetica can't show (outside Western European) prints as ?, and the program says how many there are.
 - Line weights print as set, and the default weight as 0.25 mm. Colours print as they are, darkened where they'd be too pale to see on white, or everything in black.
 - A PDF is one page of vectors and searchable text. It has no layers, links or bookmarks.
+- An SVG is the same sheet, in millimetres, with real text, for Inkscape, browsers, word processors and laser cutters' software. Its objects aren't grouped by layer, and its text is set in Helvetica, or Arial or another sans-serif where that isn't installed, so it can come out a little wider or narrower than in DraftWorx. Hatch patterns are their lines, as printed.
 - The same drawing gives the same PDF on the same computer. Another computer's zlib may compress it to different bytes that draw the same.
 - There's one border and title block design, about ISO 7200's, filled in like any block's fields. To use your own, make a block with the name the program gives its own (`Sheet A3 across`), drawn in millimetres from the paper's lower-left corner, and the program uses yours.
 - Templates come with a fixed set of layers and line types. A drawing of your own can be used as a template by saving a copy of it.

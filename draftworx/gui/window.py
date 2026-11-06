@@ -208,6 +208,7 @@ class MainWindow(QMainWindow):
         file.addSeparator()
         self._action(file, "Print…", self.print_dialog, QKeySequence.StandardKey.Print, "print")
         self._action(file, "Export PDF…", self.export_pdf_dialog, QKeySequence("Ctrl+Shift+P"), "pdf")
+        self._action(file, "Export SVG…", self.export_svg_dialog)
         file.addSeparator()
         self.revision_menu = file.addMenu("RevisionWorx")
         self._action(self.revision_menu, "Check out", self.check_out)
@@ -408,6 +409,7 @@ class MainWindow(QMainWindow):
                   Entry("Insert a drawing", "Bring another drawing in as a block, and place it", self.insert_drawing_dialog),
                   Entry("Print", "Print the sheet, to scale", self.print_dialog, "Ctrl+P"),
                   Entry("Export PDF", "The sheet as a PDF, to scale", self.export_pdf_dialog, "Ctrl+Shift+P"),
+                  Entry("Export SVG", "The sheet as an SVG in millimetres, for Inkscape, a browser or a laser cutter", self.export_svg_dialog),
                   Entry("Show the whole drawing", "Zoom to fit", lambda: self.canvas.fit(), "Home"),
                   Entry("Select all", "Select everything", self.select_all, "Ctrl+A"), Entry("Undo", "Undo the last thing", self.undo, "Ctrl+Z"),
                   Entry("Redo", "Redo what was undone", self.redo, "Ctrl+Y")]
@@ -548,21 +550,36 @@ class MainWindow(QMainWindow):
         return True
 
     def export_pdf_dialog(self) -> bool:
+        return self._export_sheet_dialog(".pdf")
+
+    def export_svg_dialog(self) -> bool:
+        return self._export_sheet_dialog(".svg")
+
+    def _export_sheet_dialog(self, suffix: str) -> bool:
         if not self._sheet_for_output():
             return False
-        suggested = str(self.opened.path.with_suffix(".pdf")) if self.opened.path else "Untitled.pdf"
-        path, _ = QFileDialog.getSaveFileName(self, "Export PDF", suggested, "PDF (*.pdf)")
+        kind = suffix[1:].upper()
+        suggested = str(self.opened.path.with_suffix(suffix)) if self.opened.path else f"Untitled{suffix}"
+        path, _ = QFileDialog.getSaveFileName(self, f"Export {kind}", suggested, f"{kind} (*{suffix})")
         if not path:
             return False
         if not Path(path).suffix:
-            path += ".pdf"
-        return self.export_pdf(path)
+            path += suffix
+        return self.export_pdf(path) if suffix == ".pdf" else self.export_svg(path)
 
     def export_pdf(self, path: str, black: bool = False) -> bool:
         from ..core.pdf import pdf_of
+        return self._export_sheet(path, pdf_of, black)
+
+    def export_svg(self, path: str, black: bool = False) -> bool:
+        """The sheet as an SVG in millimetres, to scale, for Inkscape, a browser or a laser cutter's software."""
+        from ..core.svg import svg_of
+        return self._export_sheet(path, svg_of, black)
+
+    def _export_sheet(self, path: str, make, black: bool) -> bool:
         from ..core.safefile import write_verified
         doc = self.session.doc
-        data, notes = pdf_of(doc, sheets.sheet_of(doc), black, self.opened.path.stem if self.opened.path else "")
+        data, notes = make(doc, sheets.sheet_of(doc), black, self.opened.path.stem if self.opened.path else "")
 
         def verify(back: bytes) -> None:
             if back != data:
