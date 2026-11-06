@@ -13,11 +13,12 @@ from collections import Counter
 from dataclasses import dataclass, field, replace
 
 from .. import color as colors
+from .. import dim as dims
 from ..curves import Arc, Circle, EllipseArc, Line, Polyline, Spline
-from ..model import BlockDef, DimStyle, Document, Entity, Layer, Linetype, Style, TextStyle
+from ..model import BYBLOCK_TYPE, WEIGHT_BYBLOCK, BlockDef, DimStyle, Document, Entity, Layer, Linetype, Style, TextStyle, block_used_by
 from ..rawsource import Raw
 from ..safefile import SaveError
-from ..shapes import AttDef, Attrib, Foreign, Insert, MText, Node, Solid, Text, plain_mtext, text_width
+from ..shapes import AttDef, Attrib, Dimension, Foreign, Insert, MText, Node, Solid, Text, plain_mtext, text_width
 from ..vec import Vec
 from .tags import code_line, codec_for, encode_text, fmt_float, header_state, inum, pairs, retag
 
@@ -27,6 +28,12 @@ DEFAULT = "AC1027"
 _UNITS = {"none": 0, "in": 1, "ft": 2, "mm": 4, "cm": 5, "m": 6}
 _LUNITS = {"scientific": 1, "decimal": 2, "engineering": 3, "architectural": 4, "fractional": 5}
 _CANONICAL = ("HEADER", "CLASSES", "TABLES", "BLOCKS", "ENTITIES", "OBJECTS")
+#: What's inside a dimension's own block takes its look from the dimension
+_IN_A_DIMENSION = Style("0", colors.BYBLOCK, BYBLOCK_TYPE, WEIGHT_BYBLOCK)
+#: A dimension's type in a file, and the subclass that holds the rest of it
+_DIM_TYPES = {"linear": (0, "AcDbRotatedDimension"), "aligned": (1, "AcDbAlignedDimension"), "diameter": (3, "AcDbDiametricDimension"),
+              "radius": (4, "AcDbRadialDimension")}
+_SYMBOLS = (("Ø", "%%c"), ("°", "%%d"), ("±", "%%p"))
 _R12_NAME = re.compile(r"[^A-Z0-9_$-]")
 _NAME = re.compile(r'[<>/\\":;?*|,=`\x00-\x1f]')
 
@@ -147,6 +154,8 @@ class _Writer:
         self.model_owner = "0"
         self.paper_owner = "0"
         self.known_names = {v.name for t in (doc.layers, doc.linetypes, doc.text_styles, doc.dim_styles, doc.blocks) for v in t if isinstance(v.source, Raw)} if self.src else set()
+        #: entity id -> (name, record handle) of the block a dimension written afresh gets, which is what other programs draw
+        self.dim_blocks: dict[int, tuple[str, str, Dimension]] = {}
 
     def s(self, value: str) -> str:
         return encode_text(value, self.version, self.encoding)
@@ -165,6 +174,7 @@ class _Writer:
 
     def write(self) -> bytes:
         self._plan_block_records()
+        self._plan_dimension_blocks()
         parts: dict[str, list[str]] = {"TABLES": self._section_of(self._tables), "BLOCKS": self._section_of(self._blocks), "ENTITIES": self._section_of(self._entities),
                                        "OBJECTS": self._section_of(self._objects), "CLASSES": self._section_of(self._classes)}
         parts["HEADER"] = self._section_of(self._header)     # last, because it says how many handles were used
@@ -321,6 +331,28 @@ class _Writer:
                 self.block_records[b.name.casefold()] = "0"     # it came without one, and it isn't our job to add one
             else:
                 self.block_records[b.name.casefold()] = self.handles.new() if self.modern else "0"
+
+    def _plan_dimension_blocks(self) -> None:
+        """A dimension written afresh needs a block of its own that draws it: that's what other programs show. One still drawn by the block it came with
+        keeps that."""
+        taken = {b.name.casefold() for b in self.doc.blocks} | set(self.records)
+        n = 0
+        for e in list(self.doc.entities.values()) + [e for b in self.doc.blocks for e in b.entities]:
+            s = e.shape
+            if type(s) is not Dimension or self._as_is(e) or (s.block and self.doc.blocks.get(s.block) is not None):
+                continue
+            while True:
+                n += 1
+                name = f"*D{n}"
+                if name.casefold() not in taken:
+                    break
+            taken.add(name.casefold())
+            self.dim_blocks[e.id] = (name, self.handles.new() if self.modern else "0", s)
+
+    def _as_is(self, e: Entity) -> bool:
+        """Is this written as the file had it?"""
+        src = e.source
+        return isinstance(src, Raw) and bool(self.src) and src.shape == e.shape
 
     def _read_as_a_block(self, b: BlockDef) -> bool:
         return bool(self.src) and isinstance(b.source, Raw) and bool(b.source.text)
@@ -580,15 +612,16 @@ class _Writer:
         new_names = [b for b in self.doc.blocks if b.name.casefold() not in known and not self._read_as_a_block(b)]
         wanted = [text for key, (_, text) in known.items() if key not in gone]
         owner = "0"
+        added = len(new_names) + len(self.dim_blocks)
         if self.record_head:
             head = self.record_head
-            if gone or new_names:
-                head = retag(head, {70: len(wanted) + len(new_names)}, common_only=False)
+            if gone or added:
+                head = retag(head, {70: len(wanted) + added}, common_only=False)
             o.raw(head)
             found = _hex_of(head)
             owner = found if found else "0"
         else:
-            count = len(wanted) + len(new_names) + (0 if self.src else 2)
+            count = len(wanted) + added + (0 if self.src else 2)
             owner = self._table_head("BLOCK_RECORD", count)
         for text in wanted:
             o.raw(text)
@@ -597,6 +630,8 @@ class _Writer:
             self._record("*Paper_Space", self.paper_owner, owner)
         for b in new_names:
             self._record(b.name, self.block_records[b.name.casefold()], owner)
+        for name, handle, _ in self.dim_blocks.values():
+            self._record(name, handle, owner)
         if self.record_tail:
             o.raw(self.record_tail)
         elif not self.record_head:
@@ -657,6 +692,14 @@ class _Writer:
         for b in self.doc.blocks:
             if b.name.casefold() not in done:
                 self._block(b)
+        for name, record, d in self.dim_blocks.values():
+            head, tail = self._block_frame(name, record, flags=1)
+            o.raw(head)
+            for item in dims.drawn(d, self.doc.dim_style_of(d)):
+                if type(item) is Text:
+                    item = replace(item, text=_with_symbols(item.text))
+                self._fresh(Entity(0, item, _IN_A_DIMENSION), record)
+            o.raw(tail)
 
     def _block(self, b: BlockDef) -> None:
         o = self.out
@@ -690,7 +733,7 @@ class _Writer:
 
     def _entity(self, e: Entity, owner: str) -> None:
         src = e.source
-        if isinstance(src, Raw) and self.src and src.shape == e.shape:
+        if self._as_is(e):
             if src.style == e.style:
                 self.out.raw(src.text)
             elif src.text:
@@ -855,6 +898,8 @@ class _Writer:
             o.tag(70, (1 if s.attrib.invisible else 0) | (2 if s.attrib.constant else 0))
             if s.attrib.text.valign:
                 o.tag(74, s.attrib.text.valign)
+        elif k is Dimension:
+            tail = self._dimension(e, owner)
         elif k is Insert:
             tail = self._begin("INSERT", e, owner)
             sub("AcDbMInsertBlock" if s.columns > 1 or s.rows > 1 else "AcDbBlockReference")
@@ -884,6 +929,68 @@ class _Writer:
         else:
             raise TypeError(f"no DXF form for {k.__name__}")
         o.lines += tail
+
+    def _dimension(self, e: Entity, owner: str) -> list[str]:
+        """A DIMENSION, pointing at the block that draws it. Which point goes under which code depends on its type, as DXF has it."""
+        o = self.out
+        d = e.shape
+        planned = self.dim_blocks.get(e.id)
+        block = planned[0] if planned is not None else d.block
+        words = next((item for item in dims.drawn(d, self.doc.dim_style_of(d)) if type(item) is Text), None)
+        middle = d.text_at if d.text_at is not None else (words.p if words is not None else d.at)
+        tail = self._begin("DIMENSION", e, owner)
+        self._sub("AcDbDimension")
+        o.tag(2, self.name(block))
+        if d.measure == "angular":
+            kind, subclass = (2, "AcDb2LineAngularDimension") if len(d.pts) == 4 else (5, "AcDb3PointAngularDimension")
+            first = d.pts[3] if len(d.pts) == 4 else d.at
+        elif d.measure in ("linear", "aligned"):
+            kind, subclass = _DIM_TYPES[d.measure]
+            u = (d.pts[1] - d.pts[0]).unit() if d.measure == "aligned" and d.pts[1] != d.pts[0] else Vec(math.cos(d.angle), math.sin(d.angle))
+            n = u.perp()
+            first = d.pts[1] + n * (d.at - d.pts[1]).dot(n)      # where the second extension line meets the dimension line
+        else:
+            kind, subclass = _DIM_TYPES[d.measure]
+            c, r = d.pts[0], d.pts[0].distance(d.pts[1])
+            w = d.at - c if d.at != c else d.pts[1] - c
+            edge = c + (w.unit() if w.length2() > 0.0 else Vec(1.0, 0.0)) * r
+            first = c if d.measure == "radius" else c * 2.0 - edge
+        o.pt(10, first)
+        o.pt(11, middle)
+        o.tag(70, kind | 32 | (128 if d.text_at is not None else 0))
+        if self.version >= "AC1015":
+            o.tag(71, 5)
+        if d.text:
+            o.tag(1, self.s(_with_symbols(d.text)))
+        o.tag(3, self.name(d.style))
+        if d.measure in ("linear", "aligned"):
+            self._sub("AcDbAlignedDimension")
+            o.pt(13, d.pts[0])
+            o.pt(14, d.pts[1])
+            if d.measure == "linear":
+                o.tag(50, math.degrees(d.angle) % 360.0)
+                self._sub(subclass)
+        elif d.measure == "angular":
+            self._sub(subclass)
+            if len(d.pts) == 4:
+                o.pt(13, d.pts[0])
+                o.pt(14, d.pts[1])
+                o.pt(15, d.pts[2])
+                o.pt(16, d.at)
+            else:
+                o.pt(13, d.pts[1])
+                o.pt(14, d.pts[2])
+                o.pt(15, d.pts[0])
+        else:
+            self._sub(subclass)
+            o.pt(15, edge)
+            o.tag(40, 0.0)
+        if d.scale != 1.0 and not any(line.strip() == "ACAD" for line in tail[1::2]):
+            # its own size, as an override of its style's, which is where AutoCAD keeps one
+            style = self.doc.dim_style_of(d)
+            own = style.scale if style.scale > 0.0 else 1.0
+            tail = ["1001", "ACAD", "1000", "DSTYLE", "1002", "{", "1070", "40", "1040", fmt_float(own * d.scale), "1002", "}"] + tail
+        return tail
 
     def _ellipse(self, e: Entity, owner: str) -> list[str]:
         o = self.out
@@ -1084,6 +1191,13 @@ class _Writer:
         o.tag(281, 1)
 
 
+
+def _with_symbols(text: str) -> str:
+    """Ø, ° and ± as DXF spells them, which every program reading one understands, whatever its fonts."""
+    for ch, code in _SYMBOLS:
+        text = text.replace(ch, code)
+    return text
+
 def _wrapped(line: str, width: float, height: float) -> list[str]:
     """A line of paragraph text broken at its width, and in any case where one line of plain text would be too long for the file."""
     out: list[str] = []
@@ -1158,7 +1272,11 @@ def check_written(data: bytes, doc: Document, report: WriteReport | None = None)
         p, q = doc.shape_bbox(a.shape), back.shape_bbox(b.shape)
         if not _close(p, q, limit):
             raise ValueError(f"a {type(a.shape).__name__} at {p} came back at {q}")
-    if {b.name.casefold() for b in doc.blocks} != {b.name.casefold() for b in back.blocks}:
+    # a dimension written afresh brings a block of its own
+    drawing_dims = {block_used_by(e.shape).casefold() for e in back.entities.values() if type(e.shape) is Dimension}
+    drawing_dims |= {block_used_by(e.shape).casefold() for b in back.blocks for e in b.entities if type(e.shape) is Dimension}
+    went, came = {b.name.casefold() for b in doc.blocks}, {b.name.casefold() for b in back.blocks}
+    if not went <= came or not (came - went) <= drawing_dims:
         raise ValueError("the blocks that came back aren't the ones that went in")
     for b in doc.blocks:
         if len(b.entities) != len(back.blocks[b.name].entities):

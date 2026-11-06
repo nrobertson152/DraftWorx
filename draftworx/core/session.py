@@ -22,6 +22,7 @@ from typing import Callable, Iterable
 from .grips import Grip, grip_at, grips_of
 from .model import Document, EditError
 from .select import in_window, pick
+from .shapes import Dimension
 from .snap import ALL_KINDS, Candidate, Kind, Lock, SnapEngine, SnapQuery, SnapResult, Tracked, Tracker
 from .units import TypedError, format_angle, format_length, parse_angle, parse_length, parse_number, parse_point
 from .vec import Vec
@@ -83,6 +84,7 @@ class GetPoint(Request):
     enter: bool = False                 # Enter means "finished"
     on_release: bool = False            # a drag: letting go is the answer
     ctrl_keeps_snap: bool = False
+    from_base: bool = True              # snapping measures from `base` too: polar lines, perpendicular. Typed lengths always do.
 
 
 @dataclass
@@ -247,7 +249,8 @@ class Session:
             for eid in sorted(self.selection):
                 e = self.doc.entities.get(eid)
                 if e is not None:
-                    out.extend((eid, g) for g in grips_of(e.shape))
+                    style = self.doc.dim_style_of(e.shape) if type(e.shape) is Dimension else None
+                    out.extend((eid, g) for g in grips_of(e.shape, style))
         self.grips = out
 
     # --------------------------------------------------------------------------------------------- commands
@@ -513,9 +516,9 @@ class Session:
         d = self.drafting
         suspended = self.ctrl and not req.ctrl_keeps_snap
         tracked = tuple(self.tracker.points) + req.tracked if d.tracking else ()
-        return SnapQuery(self.cursor, self.px, req.base, tracked, self._lock_for(req),
+        return SnapQuery(self.cursor, self.px, req.base if req.from_base else None, tracked, self._lock_for(req),
                          self._one_shot if self._one_shot is not None else d.kinds,
-                         d.polar_step if d.tracking and self._one_shot is None else 0.0,
+                         d.polar_step if d.tracking and self._one_shot is None and req.from_base else 0.0,
                          tuple(self.tracker.directions) if d.tracking else (), req.exclude, req.extra,
                          d.grid_step if d.grid else 0.0, enabled=d.snap and not suspended)
 
@@ -574,7 +577,11 @@ class Session:
         self.highlights = result.candidate.sources if result.candidate is not None else ()
         try:
             at = self._typed_preview(req) or result.point
-            self.ghosts = list(req.preview(at)) if req.preview is not None else []
+            out = req.preview(at) if req.preview is not None else []
+            if isinstance(out, Preview):
+                self.ghosts, self.doomed, self.hover = list(out.ghosts), list(out.doomed), out.hover
+            else:
+                self.ghosts = list(out)
         except (ValueError, ZeroDivisionError):
             self.ghosts = []
         self.fields = self._fields_for(req, result.point)

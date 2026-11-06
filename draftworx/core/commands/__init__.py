@@ -76,6 +76,6 @@ def search(text: str, limit: int = 12) -> list[CommandInfo]:
     return [t[2] for t in scored[:limit]]
 
 
-from . import draw, edit, modify  # noqa: E402  importing them registers their commands
+from . import annotate, draw, edit, modify  # noqa: E402  importing them registers their commands
 
-__all__ = ["COMMANDS", "CommandInfo", "command", "draw", "edit", "find", "modify", "search"]
+__all__ = ["COMMANDS", "CommandInfo", "annotate", "command", "draw", "edit", "find", "modify", "search"]

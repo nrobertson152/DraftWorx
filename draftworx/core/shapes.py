@@ -264,6 +264,64 @@ class Insert:
                        attribs=tuple(a.transformed(m) for a in self.attribs))
 
 
+MEASURES = ("linear", "aligned", "radius", "diameter", "angular")
+
+
+@dataclass(frozen=True, slots=True)
+class Dimension:
+    """A measurement shown on the drawing. Its lines, arrows and text are worked out from this each time (`dim.py`), so they always say what it measures.
+
+    `measure` is "linear" (along `angle`), "aligned", "radius", "diameter" or "angular". `pts` is what's measured: two points for linear and aligned; the centre
+    and a point on the curve for radius and diameter; for angular, the ends of its two lines (a0, a1, b0, b1), or its vertex and a point on each arm. `at` is
+    where it goes: a point on the dimension line, or on its arc, or where a radius or diameter's text is. `text` replaces what it says, with "<>" standing for
+    the measurement. `scale` multiplies its style's sizes. `text_at` is where its text was moved to. `refs` has, for each of `pts`, (entity id, which point of
+    it) or None: what it follows when that changes. `block` is a block from a file that drew it there, shown while the dimension is still what the file said."""
+    measure: str
+    pts: tuple[Vec, ...]
+    at: Vec
+    angle: float = 0.0
+    text: str = ""
+    style: str = "Standard"
+    scale: float = 1.0
+    text_at: Vec | None = None
+    refs: tuple = ()
+    block: str = ""
+
+    kind = "dimension"
+
+    def __post_init__(self):
+        if self.measure not in MEASURES:
+            raise ValueError(f"there's no {self.measure!r} kind of dimension")
+        wanted = {"linear": (2,), "aligned": (2,), "radius": (2,), "diameter": (2,), "angular": (3, 4)}[self.measure]
+        if len(self.pts) not in wanted:
+            raise ValueError(f"a {self.measure} dimension measures {' or '.join(map(str, wanted))} points, not {len(self.pts)}")
+        if self.refs and len(self.refs) != len(self.pts):
+            raise ValueError("a dimension says what each of its points is attached to, or nothing")
+
+    def bbox(self) -> BBox:
+        """What it measures and where it's drawn. What it draws reaches a little further, by its style's sizes: `Document.shape_bbox` has that.
+
+        `at` can be anywhere along a dimension line, so it's where the dimension line ends that counts. A radius or diameter's point on the curve only
+        says how big it is, since it's drawn toward where it goes."""
+        extra = (self.text_at,) if self.text_at is not None else ()
+        if self.measure in ("radius", "diameter"):
+            return bbox_of(self.pts[:1] + (self.at,) + extra)
+        if self.measure == "angular":
+            return bbox_of(self.pts + (self.at,) + extra)
+        p1, p2 = self.pts
+        u = p2 - p1 if self.measure == "aligned" else Vec(math.cos(self.angle), math.sin(self.angle))
+        if u.length2() == 0.0:
+            return bbox_of(self.pts + (self.at,) + extra)
+        n = u.unit().perp()
+        return bbox_of(self.pts + (p1 + n * (self.at - p1).dot(n), p2 + n * (self.at - p2).dot(n)) + extra)
+
+    def transformed(self, m: Affine) -> "Dimension":
+        """Moved with what it measures. Its sizes stay its style's, as a dimension's do when what it measures is scaled, and it's drawn afresh."""
+        along = m.apply_vector(Vec(math.cos(self.angle), math.sin(self.angle)))
+        return replace(self, pts=tuple(m.apply(p) for p in self.pts), at=m.apply(self.at), text_at=m.apply(self.text_at) if self.text_at is not None else None,
+                       angle=along.angle() if along.length2() > 0.0 else self.angle, block="")
+
+
 @dataclass(frozen=True, slots=True)
 class Foreign:
     """Something a file holds that can't be edited here. It goes back out exactly as it came in, from its entity's `source`.
@@ -288,5 +346,5 @@ class Foreign:
 
 
 Curve = Line | Arc | Circle | EllipseArc | Spline
-Shape = Curve | Polyline | Node | Solid | Text | MText | AttDef | Insert | Foreign
+Shape = Curve | Polyline | Node | Solid | Text | MText | AttDef | Insert | Dimension | Foreign
 CURVES = (Line, Arc, Circle, EllipseArc, Spline)

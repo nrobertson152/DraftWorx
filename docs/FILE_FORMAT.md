@@ -22,7 +22,7 @@ Numbers are written as the shortest text that reads back as the same double, so 
 
 ## Rules for readers
 
-- `format` must be `"DraftWorx drawing"`. A `version` above what the program knows is refused with a message; the file isn't touched.
+- `format` must be `"DraftWorx drawing"`. A `version` above what the program knows is refused with a message; the file isn't touched. A drawing is written with the oldest version that can hold it, so one without anything newer still opens in an older DraftWorx.
 - Every value is checked. A file that fails a check is refused with a message saying where, and nothing is built from it.
 - Table names compare without case. Tables are written sorted, so the order things were made doesn't change the file.
 - An `id` is unique across `entities` and all blocks, and is never reused. `next_id` is the next one to give out. It's only ever moved forward on reading.
@@ -45,7 +45,10 @@ Every object has `id` and `type`. These are optional and default as shown: `laye
 | `mtext` | `p`, `height`, `text` (DXF's formatting codes), optionally `width`, `rotation`, `attach` (1 to 9), `style`, `spacing` |
 | `attdef` | the fields of `text`, plus `tag`, optionally `prompt`, `invisible`, `constant` |
 | `insert` | `block`, `p`, optionally `sx`, `sy`, `rotation`, `attribs` (like `attdef`), `columns`, `rows`, `column_spacing`, `row_spacing` |
+| `dimension` | `measure` (`linear`, `aligned`, `radius`, `diameter` or `angular`), `pts`, `at`, optionally `angle` (radians: what a linear one measures along), `text` (`<>` is the measurement), `style`, `scale`, `text_at`, `refs`, `block`. See below |
 | `foreign` | `dxf_type`, optionally `block` and `at` (a block that draws it, and where), and `curves` (lines, arcs, circles, ellipses, polylines or splines to show for it). Something from a DXF that can't be changed here, whose `source` holds what it really is |
+
+**Dimensions** hold what they measure, not what they draw, which is worked out from these and the style. `pts` is two points for `linear` and `aligned`; the centre and a point on the curve for `radius` and `diameter`; and for `angular`, the ends of its two lines (four points), or its vertex and a point on each arm (three). `at` is a point on the dimension line or its arc, or where a radius or diameter's text goes. `refs` has one entry per point: `[id, "which"]` for the object it's attached to and which of its points (`start`, `end`, `mid`, `center`, `point`, `vertex:n`, `mid:n`, or `on` for a point on a circle or arc), or `null`. Something it names that isn't in the file is let go of on reading. `block` is a block from a DXF that drew it there, used while it's unchanged.
 
 **Colours** are one integer: 1 to 255 is a colour index, 256 ByLayer, 0 ByBlock, and `16777216 + 0xRRGGBB` a true colour. **Weights** are in hundredths of a millimetre, or -1 ByLayer, -2 ByBlock, -3 default.
 
@@ -56,3 +59,5 @@ Every object has `id` and `type`. These are optional and default as shown: `laye
 ## Versions
 
 **1** First version. The format can gain object types and optional fields without changing version while there's no release, because old files stay readable. After a release, anything an older reader would misread needs a new version and a test that old files still open.
+
+**2** Adds `dimension`. A drawing without one is still written as version 1.

@@ -7,10 +7,11 @@ from collections import Counter
 from dataclasses import dataclass, replace
 from typing import Callable
 
+from . import dim as dims
 from .curves import Arc, Circle, EllipseArc, Line, Polyline, Spline
 from .geometry import arc_from_center
 from .model import Document, Settings
-from .shapes import AttDef, Foreign, Insert, MText, Node, Solid, Text
+from .shapes import AttDef, Dimension, Foreign, Insert, MText, Node, Solid, Text
 from .units import format_angle, format_length, parse_angle, parse_length, parse_number
 from .vec import TAU, Vec, polar
 
@@ -19,6 +20,8 @@ NAMES = {Line: "Line", Arc: "Arc", Circle: "Circle", EllipseArc: "Ellipse", Spli
 
 
 def name_of(shape) -> str:
+    if type(shape) is Dimension:
+        return "Dimension"
     if type(shape) is Foreign:
         return shape.dxf_type.replace("ACAD_", "").replace("_", " ").capitalize()
     return NAMES.get(type(shape), type(shape).__name__)
@@ -118,6 +121,12 @@ def rows_for(s, st: Settings) -> list[Row]:
     if k is Insert:
         return [Row("Block", s.block), Row("Scale X", f"{s.sx:g}", lambda t: replace(s, sx=parse_number(t))), Row("Scale Y", f"{s.sy:g}", lambda t: replace(s, sy=parse_number(t))),
                 Row("Rotation", _ang(s.rotation, st), lambda t: replace(s, rotation=parse_angle(t))), *_point_rows("Position", s.p, st, lambda p: replace(s, p=p))]
+    if k is Dimension:
+        value = dims.measurement(s)
+        measured = _ang(value, st) if s.measure == "angular" else _len(value, st)
+        return [Row("Measures", f"{measured} ({s.measure})"),
+                Row("Text", s.text or "<>", lambda t: replace(s, text="" if t.strip() == "<>" else t, block="")),
+                Row("Style", s.style), Row("Attached", "Yes" if any(r is not None for r in s.refs) else "No")]
     if k is Foreign:
         return [Row("From a file", "Its layer and colour can change. Its shape can't, here.")]
     return []

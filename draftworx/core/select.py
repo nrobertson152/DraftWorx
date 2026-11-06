@@ -5,9 +5,10 @@ from __future__ import annotations
 import math
 from typing import Iterator
 
+from . import dim as dims
 from .curves import Arc, Circle, EllipseArc, Line, Polyline, Spline
 from .model import Document, Entity, split_key
-from .shapes import AttDef, Foreign, Insert, MText, Node, Solid, Text
+from .shapes import AttDef, Dimension, Foreign, Insert, MText, Node, Solid, Text
 from .vec import IDENTITY, Affine, BBox, Vec, bbox_contains
 
 _CURVES = (Line, Arc, Circle, EllipseArc, Spline)
@@ -26,6 +27,11 @@ def _placed(c, m: Affine):
         return None
 
 
+def drawn_by(doc: Document, d: Dimension) -> list:
+    """What a dimension draws, as shapes, unless a file's block draws it."""
+    return [] if d.block and doc.blocks.get(d.block) is not None else dims.drawn(d, doc.dim_style_of(d))
+
+
 def curves_of(doc: Document, e: Entity, m: Affine = IDENTITY, _depth: int = 0, _left: list | None = None) -> Iterator:
     """Every curve an entity draws, in drawing coordinates, including inside blocks. There's a limit to how many, shared by everything inside it."""
     s = e.shape
@@ -39,13 +45,15 @@ def curves_of(doc: Document, e: Entity, m: Affine = IDENTITY, _depth: int = 0, _
         parts = s.outline().segments
     elif k is Foreign:
         parts = [seg for c in s.curves for seg in (c.segments if type(c) is Polyline else (c,))]
+    elif k is Dimension:
+        parts = [seg for item in drawn_by(doc, s) for seg in ((item,) if type(item) in _CURVES else item.outline().segments if type(item) is Solid else ())]
     for c in parts:
         c = _placed(c, m)
         if c is not None:
             yield c
-    if k is Foreign and s.block:
+    if (k is Foreign or k is Dimension) and s.block:
         k = Insert
-        s = Insert(s.block, s.at)
+        s = Insert(s.block, s.at if type(s) is Foreign else Vec(0.0, 0.0))
     if k is Insert and _depth < 16:
         d = doc.blocks.get(s.block)
         if d is None:
@@ -112,6 +120,19 @@ def distance_to(doc: Document, e: Entity, p, _depth: int = 0) -> float:
         return math.hypot(q[0] - p[0], q[1] - p[1])
     if k is Insert:
         return _insert_distance(doc, s, p, _depth)
+    if k is Dimension:
+        best = math.inf
+        if s.block and doc.blocks.get(s.block) is not None:
+            return _insert_distance(doc, Insert(s.block, Vec(0.0, 0.0)), p, _depth)
+        for item in drawn_by(doc, s):
+            if type(item) is Text:
+                best = min(best, _text_box_distance(item.box(), p))
+            elif type(item) is Solid:
+                best = min(best, 0.0 if _in_polygon(item.pts, p) else distance_to(doc, Entity(0, item), p))
+            else:
+                q = item.project(p)[1]
+                best = min(best, math.hypot(q[0] - p[0], q[1] - p[1]))
+        return best
     if k is Foreign:
         best = math.inf
         for c in s.curves:
@@ -219,6 +240,10 @@ def _entity_touches_box(doc: Document, e: Entity, box: BBox, px: float) -> bool:
             or _in_polygon(corners, ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2))
     if k is Solid and _in_polygon(s.pts, ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2)):
         return True
+    if k is Dimension:
+        for item in drawn_by(doc, s):
+            if type(item) is Text and _entity_touches_box(doc, Entity(0, item), box, px):
+                return True
     if k is Insert:
         d = doc.blocks.get(s.block)
         if d is None:

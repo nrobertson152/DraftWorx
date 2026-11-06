@@ -16,12 +16,12 @@ from . import color as colors
 from .curves import Arc, Circle, EllipseArc, Line, Polyline, Spline
 from .model import MOST_SEGMENTS, BlockDef, DimStyle, Document, Entity, Layer, Linetype, Settings, Style, TextStyle, block_used_by
 from .rawsource import Raw
-from .shapes import AttDef, Attrib, Foreign, Insert, MText, Node, Solid, Text
+from .shapes import MEASURES, AttDef, Attrib, Dimension, Foreign, Insert, MText, Node, Solid, Text
 from .vec import TAU, Vec
 
 _LONE_SURROGATE = re.compile("[\ud800-\udfff]")
 FORMAT = "DraftWorx drawing"
-VERSION = 1
+VERSION = 2             # the newest this reads. A drawing is written with the oldest version that can hold it (see `version_needed`).
 MAX_ID = 1 << 39        # room for a sub-index under it in the spatial index, and more than any drawing will use
 
 
@@ -135,6 +135,23 @@ def encode_shape(s) -> dict:
         if s.columns != 1 or s.rows != 1:
             d["columns"], d["rows"] = s.columns, s.rows
             d["column_spacing"], d["row_spacing"] = float(s.column_spacing), float(s.row_spacing)
+        return d
+    if k is Dimension:
+        d = {"type": "dimension", "measure": s.measure, "pts": [_pt(p) for p in s.pts], "at": _pt(s.at)}
+        if s.angle:
+            d["angle"] = float(s.angle)
+        if s.text:
+            d["text"] = s.text
+        if s.style != "Standard":
+            d["style"] = s.style
+        if s.scale != 1.0:
+            d["scale"] = float(s.scale)
+        if s.text_at is not None:
+            d["text_at"] = _pt(s.text_at)
+        if s.refs:
+            d["refs"] = [[r[0], r[1]] if r is not None else None for r in s.refs]
+        if s.block:
+            d["block"] = s.block
         return d
     if k is Foreign:
         d = {"type": "foreign", "dxf_type": s.dxf_type}
@@ -265,11 +282,17 @@ def canonical_state(doc: Document) -> dict:
             "entities": [encode_entity(e) for e in sorted(doc.entities.values(), key=lambda e: e.id)]}
 
 
+def version_needed(doc: Document) -> int:
+    """The oldest format version that holds this drawing, so a drawing without anything newer still opens in an older DraftWorx. Version 2 added dimensions."""
+    shapes = [e.shape for e in doc.entities.values()] + [e.shape for b in doc.blocks for e in b.entities]
+    return 2 if any(type(x) is Dimension for x in shapes) else 1
+
+
 def dumps(doc: Document, program: str = "") -> bytes:
     """The whole file. One object to a line, so a text diff between two versions shows what changed."""
     state = canonical_state(doc)
     c = doc.current
-    head = {"format": FORMAT, "version": VERSION, "program": program, "next_id": doc._next_id,
+    head = {"format": FORMAT, "version": version_needed(doc), "program": program, "next_id": doc._next_id,
             "settings": state["settings"],
             "current": {"layer": c.layer, "color": c.color, "linetype": c.linetype, "weight": c.weight,
                         "text_style": c.text_style, "dim_style": c.dim_style}}
@@ -432,6 +455,17 @@ def decode_shape(d: dict, ctx: str):
                           _num(d, "rotation", ctx, 0.0), tuple(_decode_attrib(a, ctx) for a in attribs),
                           _int(d, "columns", ctx, 1, 1, 100_000), _int(d, "rows", ctx, 1, 1, 100_000),
                           _num(d, "column_spacing", ctx, 0.0), _num(d, "row_spacing", ctx, 0.0))
+        if t == "dimension":
+            measure = _str(d, "measure", ctx)
+            if measure not in MEASURES:
+                raise FormatError(f"{ctx}: there's no {measure!r} kind of dimension.")
+            refs = d.get("refs", [])
+            if not isinstance(refs, list) or not all(r is None or (isinstance(r, list) and len(r) == 2 and isinstance(r[0], int) and not isinstance(r[0], bool)
+                                                                    and 0 < r[0] <= MAX_ID and isinstance(r[1], str)) for r in refs):
+                raise FormatError(f"{ctx}: refs should be a list of [id, point name] pairs or nulls.")
+            return Dimension(measure, _points(d, "pts", ctx, 2), _pt_of(d, "at", ctx), _num(d, "angle", ctx, 0.0), _str(d, "text", ctx, ""),
+                             _str(d, "style", ctx, "Standard"), _num(d, "scale", ctx, 1.0), _pt_of(d, "text_at", ctx) if "text_at" in d else None,
+                             tuple((r[0], r[1]) if r is not None else None for r in refs), _str(d, "block", ctx, ""))
         if t == "foreign":
             curves = d.get("curves", [])
             if not isinstance(curves, list) or not all(isinstance(c, dict) and c.get("type") in ("line", "arc", "circle", "ellipse", "polyline", "spline") for c in curves):
@@ -557,6 +591,12 @@ def build(obj, source_reader=None) -> Document:
         doc._set("entity", e.id, None, e)
         if e.id > biggest:
             biggest = e.id
+    for e in list(doc.entities.values()):
+        # a dimension can only be attached to something in the same drawing
+        s = e.shape
+        if type(s) is Dimension and s.refs and any(r is not None and r[0] not in doc.entities for r in s.refs):
+            refs = tuple(r if r is not None and r[0] in doc.entities else None for r in s.refs)
+            doc._set("entity", e.id, e, replace(e, shape=replace(s, refs=refs if any(r is not None for r in refs) else ())))
     doc._next_id = _int(obj, "next_id", "The file", biggest + 1, 1)
     if doc._next_id <= biggest:
         doc._next_id = biggest + 1

@@ -15,7 +15,7 @@ import pytest
 from draftworx.core.curves import Arc, Circle, EllipseArc, Polyline
 from draftworx.core.dxf import VERSIONS, read_dxf, write_dxf
 from draftworx.core.model import BlockDef, Document, Entity, Layer, Style
-from draftworx.core.shapes import Insert, MText, Node, Solid, Text
+from draftworx.core.shapes import Dimension, Insert, MText, Node, Solid, Text
 from draftworx.core.vec import TAU, Vec
 from driver import line
 
@@ -35,6 +35,8 @@ def drawing() -> Document:
         t.add(Node(Vec(5.0, 5.0)))
         t.put_block(BlockDef("Bolt", Vec(0.0, 0.0), (Entity(1000, line(-5, 0, 5, 0)),)))
         t.add(Insert("Bolt", Vec(100.0, 100.0), 2.0, 2.0, math.pi / 2.0))
+        t.add(Dimension("linear", (Vec(0.0, 0.0), Vec(100.0, 0.0)), Vec(50.0, -20.0)))
+        t.add(Dimension("diameter", (Vec(50.0, 50.0), Vec(50.0, 75.0)), Vec(50.0, 90.0)))
     return d
 
 
@@ -63,6 +65,8 @@ def test_gdal_reads_what_was_drawn(version, tmp_path):
     assert by["AcDbLine"][0]["geometry"]["coordinates"][-1][:2] == [100.0, 0.0]
     words = {f["properties"].get("Text") for f in features}
     assert "Hello é" in words
+    # dimensions, through the blocks that draw them: a file's %%c is a diameter sign to GDAL
+    assert "100" in words and any(w and w.endswith("50") and w[0] in "Ø⌀" for w in words)
     # a circle comes back as many short lines, all the right distance from its centre
     circle = next(f for f in features if "Circle" in f["properties"]["SubClasses"] and "Arc" not in f["properties"]["SubClasses"])
     for x, y, *_ in circle["geometry"]["coordinates"]:

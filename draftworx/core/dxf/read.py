@@ -7,11 +7,12 @@ from collections import Counter
 from dataclasses import replace
 
 from .. import color as colors
+from .. import dim as dims
 from ..curves import Arc, Circle, EllipseArc, Line, Polyline, Spline, spline_through
 from ..model import BlockDef, DimStyle, Document, Entity, Layer, Linetype, Settings, Style, TextStyle
 from ..native import FormatError, check_block_cycles
 from ..rawsource import Raw
-from ..shapes import AttDef, Attrib, Foreign, Insert, MText, Node, Solid, Text
+from ..shapes import AttDef, Attrib, Dimension, Foreign, Insert, MText, Node, Solid, Text
 from ..vec import TAU, Vec, ccw_sweep
 from .foreign import IN_PART, block_of, curves_of_foreign
 from .tags import Decoded, clean, decode, decode_text, fnum, header_state, inum, pairs
@@ -21,7 +22,7 @@ MOST_COORDINATE = 1e100     # further out than anything real, and near where ari
 UNITS = {0: "none", 1: "in", 2: "ft", 4: "mm", 5: "cm", 6: "m"}
 _LUNITS = {1: "scientific", 2: "decimal", 3: "engineering", 4: "architectural", 5: "fractional"}
 #: What becomes something you can edit. Everything else is kept as text.
-EDITABLE = {"LINE", "ARC", "CIRCLE", "ELLIPSE", "POINT", "LWPOLYLINE", "POLYLINE", "SPLINE", "TEXT", "MTEXT", "SOLID", "TRACE", "INSERT", "ATTDEF"}
+EDITABLE = {"LINE", "ARC", "CIRCLE", "ELLIPSE", "POINT", "LWPOLYLINE", "POLYLINE", "SPLINE", "TEXT", "MTEXT", "SOLID", "TRACE", "INSERT", "ATTDEF", "DIMENSION"}
 _PLURALS = {"HATCH": "hatches", "3DSOLID": "3D solids", "3DFACE": "3D faces", "ACAD_TABLE": "tables", "MLEADER": "multileaders", "MULTILEADER": "multileaders",
             "ACAD_PROXY_ENTITY": "proxy objects", "ARC_DIMENSION": "arc dimensions", "LARGE_RADIAL_DIMENSION": "large radial dimensions", "XLINE": "construction lines",
             "RAY": "rays", "POLYLINE": "3D polylines and meshes"}
@@ -39,6 +40,23 @@ def _plural(kind: str, n: int) -> str:
 def _sane(box) -> bool:
     return box is None or all(abs(v) < MOST_COORDINATE for v in box)
 
+
+
+def _dimscale_override(tags: list) -> float | None:
+    """A dimension's own DIMSCALE, from the overrides AutoCAD keeps in its extended data. The others stay in the file's text."""
+    in_acad = in_dstyle = False
+    i, n = 0, len(tags)
+    while i < n:
+        code, value = tags[i]
+        if code == 1001:
+            in_acad = value.strip() == "ACAD"
+            in_dstyle = False
+        elif in_acad and code == 1000 and value.strip() == "DSTYLE":
+            in_dstyle = True
+        elif in_dstyle and code == 1070 and value.strip() == "40" and i + 1 < n and tags[i + 1][0] == 1040:
+            return fnum(tags[i + 1][1])
+        i += 1
+    return None
 
 class _Reader:
     def __init__(self, d: Decoded):
@@ -333,6 +351,8 @@ class _Reader:
             return self._spline(tags, d)
         if kind == "MTEXT":
             return None if self._flipped(d) == 0 else self._mtext(tags, d)
+        if kind == "DIMENSION":
+            return self._dimension(tags, d)
         flip = self._flipped(d)
         if flip == 0:
             return None
@@ -376,6 +396,55 @@ class _Reader:
             flags = inum(d.get(70, "0"))
             return AttDef(Attrib(clean(d.get(2, "")).strip(), self._text(d, sign, 74), decode_text(d.get(3, "")), bool(flags & 1), bool(flags & 2)))
         return None
+
+    def _dimension(self, tags: list, d: dict) -> Dimension | None:
+        """A dimension, as one that can be changed. Its block still draws it while it's unchanged. None, so it stays as the file had it, for an ordinate
+        dimension, one that isn't flat, or one placed somewhere other than where its block is."""
+        if self._flipped(d) != 1 or fnum(d.get(12, "0")) or fnum(d.get(22, "0")):
+            return None
+        flags = inum(d.get(70, "0"))
+        kind = flags & 7
+        style = clean(d.get(3, "Standard")).strip() or "Standard"
+        text = decode_text(d.get(1, ""))
+        text = "" if text == "<>" else text
+        block = clean(d.get(2, "")).strip()
+
+        def p(code: int) -> Vec:
+            return self._vec(d, code)
+        text_at = p(11) if flags & 128 and 11 in d else None
+        if kind == 0 or kind == 1:
+            measure = "linear" if kind == 0 else "aligned"
+            shape = Dimension(measure, (p(13), p(14)), p(10), math.radians(fnum(d.get(50, "0"))) if kind == 0 else 0.0, text, style, 1.0, text_at)
+        elif kind == 2:
+            shape = Dimension("angular", (p(13), p(14), p(15), p(10)), p(16), 0.0, text, style, 1.0, text_at)
+        elif kind == 5:
+            shape = Dimension("angular", (p(15), p(13), p(14)), p(10), 0.0, text, style, 1.0, text_at)
+        elif kind == 4 or kind == 3:
+            c, edge = (p(10), p(15)) if kind == 4 else (p(10).midpoint(p(15)), p(15))
+            shape = Dimension("radius" if kind == 4 else "diameter", (c, edge), edge, 0.0, text, style, 1.0, text_at)
+        else:
+            return None
+        override = _dimscale_override(tags)
+        if override is not None and override > 0.0:
+            own = self.doc.dim_styles.get(style)
+            base = own.scale if own is not None and own.scale > 0.0 else 1.0
+            shape = replace(shape, scale=override / base)
+        if shape.measure in ("radius", "diameter") and 11 in d:
+            shape = replace(shape, at=self._radial_at(shape, p(11)))
+        return replace(shape, block=block)
+
+    def _radial_at(self, d: Dimension, middle: Vec) -> Vec:
+        """Where a radius or diameter goes, from where its text's middle is: what a file holds. Outside the curve its line runs out to just under the
+        text. Inside, all that matters is which way it points, which is toward its point on the curve."""
+        c, edge = d.pts
+        r = c.distance(edge)
+        toward = (edge - c).unit() if edge != c else Vec(1.0, 0.0)
+        if d.text_at is not None or c.distance(middle) <= r:
+            return middle if d.text_at is not None and c.distance(middle) > r else c + toward * (r * 0.5)
+        sizes = dims.sizes(d, self.doc.dim_style_of(d))
+        rotation = dims.readable(toward)
+        up = Vec(-math.sin(rotation), math.cos(rotation))
+        return middle - up * (sizes["gap"] + sizes["text"] * 0.5)
 
     def _text(self, d: dict, sign: float, valign_code: int) -> Text:
         h = fnum(d.get(40, "0"))

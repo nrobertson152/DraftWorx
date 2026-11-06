@@ -6,9 +6,10 @@ import math
 from dataclasses import dataclass, replace
 
 from .. import color as colors
+from .. import dim as dims
 from ..curves import Arc, Circle, EllipseArc, Line, Polyline, Spline, bulge_arc
 from ..model import BYBLOCK_TYPE, WEIGHT_BYBLOCK, Document, Style
-from ..shapes import AttDef, Foreign, Insert, MText, Node, Solid, Text, plain_mtext
+from ..shapes import AttDef, Dimension, Foreign, Insert, MText, Node, Solid, Text, plain_mtext
 from ..vec import Affine, Vec, tol
 
 # ----------------------------------------------------------------------------------------------------- joining
@@ -143,6 +144,10 @@ def explode_shape(doc: Document, s, style: Style) -> list[tuple[object, Style]]:
         return [(g, style) for g in s.segments]
     if k is Insert:
         return _insert_parts(doc, s, style)
+    if k is Dimension:
+        if s.block and doc.blocks.get(s.block) is not None:
+            return _insert_parts(doc, Insert(s.block, Vec(0.0, 0.0)), style)
+        return [(piece, style) for piece in dims.drawn(s, doc.dim_style_of(s))]
     if k is Foreign:
         out: list[tuple[object, Style]] = [(c, style) for c in s.curves]
         if s.block:
