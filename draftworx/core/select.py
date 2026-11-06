@@ -134,7 +134,7 @@ def distance_to(doc: Document, e: Entity, p, _depth: int = 0) -> float:
     if k is Text or k is MText:
         return _text_box_distance(s.box(), p)
     if k is AttDef:
-        return _text_box_distance(s.attrib.text.box(), p)
+        return _text_box_distance(s.shown().box(), p)
     if k is Solid:
         if _in_polygon(s.pts, p):
             return 0.0
@@ -255,7 +255,7 @@ def _entity_touches_box(doc: Document, e: Entity, box: BBox, px: float) -> bool:
     if k is Node:
         return box[0] <= s.p[0] <= box[2] and box[1] <= s.p[1] <= box[3]
     if k is Text or k is MText or k is AttDef:
-        t = s.attrib.text if k is AttDef else s
+        t = s.shown() if k is AttDef else s
         o, a, u = t.box()
         corners = (o, o + a, o + a + u, o + u)
         if any(box[0] <= q[0] <= box[2] and box[1] <= q[1] <= box[3] for q in corners):

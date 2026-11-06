@@ -54,6 +54,13 @@ def _positive(v: float, what: str) -> float:
     return v
 
 
+def _tag(t: str) -> str:
+    tag = t.strip().upper()
+    if not tag or " " in tag:
+        raise ValueError("a tag is one word, without spaces")
+    return tag
+
+
 def rows_for(s, st: Settings) -> list[Row]:
     """The numbers for one shape."""
     k = type(s)
@@ -119,8 +126,21 @@ def rows_for(s, st: Settings) -> list[Row]:
                 Row("Width", _len(s.width, st), lambda t: replace(s, width=parse_length(t, u))),
                 Row("Rotation", _ang(s.rotation, st), lambda t: replace(s, rotation=parse_angle(t))), *_point_rows("Position", s.p, st, lambda p: replace(s, p=p))]
     if k is Insert:
-        return [Row("Block", s.block), Row("Scale X", f"{s.sx:g}", lambda t: replace(s, sx=parse_number(t))), Row("Scale Y", f"{s.sy:g}", lambda t: replace(s, sy=parse_number(t))),
+        def set_value(i: int):
+            def change(t):
+                a = s.attribs[i]
+                return replace(s, attribs=s.attribs[:i] + (replace(a, text=replace(a.text, text=t)),) + s.attribs[i + 1:])
+            return change
+        fields = [Row(a.tag, a.text.text, set_value(i) if not a.constant else None) for i, a in enumerate(s.attribs)]
+        return [Row("Block", s.block), *fields, Row("Scale X", f"{s.sx:g}", lambda t: replace(s, sx=parse_number(t))),
+                Row("Scale Y", f"{s.sy:g}", lambda t: replace(s, sy=parse_number(t))),
                 Row("Rotation", _ang(s.rotation, st), lambda t: replace(s, rotation=parse_angle(t))), *_point_rows("Position", s.p, st, lambda p: replace(s, p=p))]
+    if k is AttDef:
+        a = s.attrib
+        return [Row("Tag", a.tag, lambda t: replace(s, attrib=replace(a, tag=_tag(t)))),
+                Row("Asks", a.prompt, lambda t: replace(s, attrib=replace(a, prompt=t))),
+                Row("Value until filled in", a.text.text, lambda t: replace(s, attrib=replace(a, text=replace(a.text, text=t)))),
+                Row("Height", _len(a.text.height, st), lambda t: replace(s, attrib=replace(a, text=replace(a.text, height=_positive(parse_length(t, u), "A height")))))]
     if k is Dimension:
         value = dims.measurement(s)
         measured = _ang(value, st) if s.measure == "angular" else _len(value, st)

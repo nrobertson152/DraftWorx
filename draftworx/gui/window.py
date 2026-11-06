@@ -32,7 +32,8 @@ FILE_FILTER = "Drawings (*.draftworx *.dxf);;DraftWorx drawings (*.draftworx);;D
 SAVE_FILTER = "DraftWorx drawing (*.draftworx);;DXF file (*.dxf)"
 RAIL = (("Draw", ("LINE", "PLINE", "RECTANGLE", "CIRCLE", "ARC", "ELLIPSE", "HATCH")),
         ("Modify", ("MOVE", "COPY", "ROTATE", "SCALE", "MIRROR", "TRIM", "OFFSET", "FILLET", "ERASE")),
-        ("Annotate", ("TEXT", "DIMENSION")))
+        ("Annotate", ("TEXT", "DIMENSION")),
+        ("Blocks", ("INSERT", "BLOCK")))
 AUTOSAVE_MS = 60_000
 
 
@@ -185,6 +186,8 @@ class MainWindow(QMainWindow):
         self._action(file, "Save", self.save, QKeySequence.StandardKey.Save, "save")
         self._action(file, "Save as…", self.save_as, QKeySequence.StandardKey.SaveAs)
         file.addSeparator()
+        self._action(file, "Insert a drawing…", self.insert_drawing_dialog, None, "insert")
+        file.addSeparator()
         self._action(file, "Exit", self.close, QKeySequence.StandardKey.Quit)
         edit = bar.addMenu("&Edit")
         self._action(edit, "Undo", self.undo, QKeySequence.StandardKey.Undo, "undo")
@@ -217,7 +220,7 @@ class MainWindow(QMainWindow):
         groups: dict[str, list] = {}
         for info in COMMANDS.values():
             groups.setdefault(info.group, []).append(info)
-        for group in ("Draw", "Modify", "Annotate"):
+        for group in ("Draw", "Modify", "Annotate", "Blocks"):
             if group not in groups:
                 continue
             menu = bar.addMenu(group)
@@ -372,6 +375,7 @@ class MainWindow(QMainWindow):
         extras = [Entry("Save", "Save the drawing", self.save, "Ctrl+S"), Entry("Open", "Open a drawing", self.open_dialog, "Ctrl+O"),
                   Entry("New", "Start a new drawing", self.new_drawing, "Ctrl+N"), Entry("Save as", "Save under another name", self.save_as),
                   Entry("Export as DXF R12", "A copy in the oldest kind of DXF, for machines and programs that need it", self.export_r12),
+                  Entry("Insert a drawing", "Bring another drawing in as a block, and place it", self.insert_drawing_dialog),
                   Entry("Show the whole drawing", "Zoom to fit", lambda: self.canvas.fit(), "Home"),
                   Entry("Select all", "Select everything", self.select_all, "Ctrl+A"), Entry("Undo", "Undo the last thing", self.undo, "Ctrl+Z"),
                   Entry("Redo", "Redo what was undone", self.redo, "Ctrl+Y")]
@@ -476,6 +480,38 @@ class MainWindow(QMainWindow):
         if not Path(path).suffix:
             path += ".dxf" if "dxf" in chosen else ".draftworx"
         return self._save_to(path)
+
+    def insert_drawing_dialog(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Insert a drawing", "", FILE_FILTER)
+        if path:
+            self.insert_drawing(path)
+
+    def insert_drawing(self, path: str) -> bool:
+        """Another drawing, as a block named after it, then placed like any block."""
+        from ..core import blocks
+        from ..core.commands.blocks import place
+        try:
+            other = open_drawing(path).doc
+        except FormatError as exc:
+            QMessageBox.warning(self, "DraftWorx", str(exc))
+            return False
+        doc = self.session.doc
+        stem = Path(path).stem
+        name = stem if blocks.problem_with_name(stem) is None and stem not in doc.blocks else blocks.free_name(doc, stem)
+        brought = blocks.bring_in(doc, other, name)
+        with doc.transaction(f"Bring in {Path(path).name}") as t:
+            blocks.add(t, brought)
+        notes = []
+        if brought.left_out:
+            notes.append(f"{brought.left_out} object{'s' if brought.left_out != 1 else ''} from that file that can't be changed here were left out.")
+        if brought.kept:
+            notes.append(f"This drawing's own {', '.join(brought.kept[:5])} {'were' if len(brought.kept) != 1 else 'was'} kept, rather than the file's.")
+        self.session.run_generator(place(self.session, name), "Insert")
+        self.session.message = " ".join(notes)
+        self.canvas.setFocus()
+        self.canvas.update()
+        self._state_changed()
+        return True
 
     def export_r12(self) -> bool:
         """A copy for something that only reads the old format. What it had to simplify is said, and the drawing carries on as it was."""

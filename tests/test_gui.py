@@ -561,6 +561,20 @@ class TestPanel:
 
 
 class TestWindow:
+    def test_inserting_a_drawing_places_it_as_a_block(self, hand, tmp_path):
+        from draftworx.core.model import Document
+        from draftworx.core.native import dumps
+        other = Document()
+        with other.transaction("x") as t:
+            t.add(Circle(Vec(0.0, 0.0), 10.0))
+        path = tmp_path / "Pump.draftworx"
+        path.write_bytes(dumps(other))
+        assert hand.w.insert_drawing(str(path))
+        hand.click(100, 75)
+        (ins,) = [e.shape for e in hand.doc.entities.values() if type(e.shape) is Insert]
+        assert ins.block == "Pump" and ins.p.distance((100, 75)) < 1.0
+        assert any(b.property("icon_name") == "insert" for b in hand.w.rail.findChildren(QToolButton))
+
     def test_undo_and_redo_actions(self, hand):
         add(hand, line(0, 0, 10, 10))
         hand.w.undo()
