@@ -35,8 +35,10 @@ jobs:
         run: sudo apt-get install -y -qq gdal-bin librecad
       - name: Install project and test dependencies
         run: python -m pip install -e ".[dev]"
-      - name: Install OpenSchematix, for the exchange tests
-        run: python -m pip install --no-deps "git+https://github.com/nrobertson152/OpenSchematix.git"
+      - name: Install OpenSchematix and RevisionWorx, for the exchange tests
+        run: |
+          python -m pip install --no-deps "git+https://github.com/nrobertson152/OpenSchematix.git"
+          python -m pip install --no-deps "git+https://github.com/nrobertson152/RevisionWorx.git"
       - name: Byte-compile
         run: python -m compileall -q draftworx tests
       - name: Look for mistakes

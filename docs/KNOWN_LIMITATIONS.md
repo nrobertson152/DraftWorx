@@ -4,7 +4,7 @@ DraftWorx is deliberately small. A simple result mustn't look like an exact one,
 
 ## Not there yet
 
-This is early. You can draw lines, polylines, rectangles, circles, arcs, ellipses, points and text, select them, drag their handles, move, copy, rotate, scale, mirror and erase them, trim, extend, offset, fillet, chamfer, array, break, join, explode and stretch them, match one's look to another's, dimension and hatch them, and open and save DXF as well as `.draftworx`. Nothing else yet: no block creation or printing. See `ROADMAP.md`.
+This is early. You can draw lines, polylines, rectangles, circles, arcs, ellipses, points and text, select them, drag their handles, move, copy, rotate, scale, mirror and erase them, trim, extend, offset, fillet, chamfer, array, break, join, explode and stretch them, match one's look to another's, dimension and hatch them, make and place blocks with fields to fill in, and open and save DXF as well as `.draftworx`. Nothing else yet: no printing. See `ROADMAP.md`.
 
 ## Changing things
 
@@ -34,6 +34,14 @@ This is early. You can draw lines, polylines, rectangles, circles, arcs, ellipse
 - A mirrored hatch keeps its pattern the way it was, as AutoCAD does by default. Its boundary is mirrored.
 - Where a boundary is curved, a pattern's lines end exactly on it. A solid fill's edge is drawn as fine chords, as every curve is.
 - Hatches aren't snapped to; the objects round them are.
+
+## Blocks
+
+- Block makes a block of what's selected, with the point you pick as its base, and puts a copy where they were. Insert places a copy, sized and turned, and asks for each field (attribute). A copy's fields can be changed in the panel or with Change values (ATTEDIT).
+- There's no block editor. To change what a block holds, explode a copy, change it, and make a block of the same name: it replaces the block everywhere it's placed.
+- Insert a drawing brings another drawing in as a block named after it. Its layers, styles and blocks come with it, except where this drawing has its own of the same name, which win. What's in it that can't be changed here, such as a 3D solid from a DXF, can't be moved to another drawing either, so it's left out, and the program says how many.
+- Fields are text. AutoCAD's fields that fill themselves in (`%<\AcVar ...>%`) and dynamic blocks' parameters are kept in a DXF but not worked out.
+- A parts list counts placed blocks with a part number field, one level deep (`COMMAND_LINE.md`). It doesn't look inside blocks inside blocks.
 
 ## DXF
 

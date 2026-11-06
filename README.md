@@ -5,7 +5,7 @@
 Not more features than AutoCAD. Just everyday drafting that's easier: snaps that find the point you meant without a settings dialog, typing a length wherever you are,
 trimming the bit in the way, one Dimension tool that reads what you point at, and DXF files that come back undamaged.
 
-> **Status: under construction.** You can draw, snap, select, trim, offset, fillet and otherwise change things, dimension and hatch them, and open and save DXF without damaging it. There's no printing yet, and nobody has used it by hand. See [the roadmap](docs/ROADMAP.md).
+> **Status: under construction.** You can draw, snap, select, trim, offset, fillet and otherwise change things, dimension and hatch them, make and place blocks with fields to fill in, and open and save DXF without damaging it. There's no printing yet, and nobody has used it by hand. See [the roadmap](docs/ROADMAP.md).
 
 ![DraftWorx drawing a line, lined up with a corner it picked up by pausing on it](docs/images/screenshot.png)
 
@@ -28,6 +28,7 @@ Type `L` and Enter to draw a line. Type a length and Enter. Pause on a corner to
 - [Roadmap](docs/ROADMAP.md)
 - [What existing CAD programs teach](docs/RESEARCH.md)
 - [The file format](docs/FILE_FORMAT.md)
+- [The `draftworx` command, for other programs](docs/COMMAND_LINE.md)
 - [Known limitations](docs/KNOWN_LIMITATIONS.md)
 
 ## Part of a family

@@ -222,8 +222,12 @@ class AttDef:
     attrib: Attrib
     kind = "attdef"
 
+    def shown(self) -> Text:
+        """What's drawn of a definition on its own: its tag, as in AutoCAD. Each placed copy shows its own value instead."""
+        return replace(self.attrib.text, text=self.attrib.tag) if self.attrib.tag else self.attrib.text
+
     def bbox(self) -> BBox:
-        return self.attrib.text.bbox()
+        return bbox_union(self.attrib.text.bbox(), self.shown().bbox())
 
     def transformed(self, m: Affine) -> "AttDef":
         return AttDef(self.attrib.transformed(m))

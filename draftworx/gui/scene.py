@@ -438,7 +438,7 @@ class Scene:
         elif k is MText:
             path.addPath(mtext_paths(s.transformed(m) if moved else s, self.doc))
         elif k is AttDef:
-            t = s.attrib.text
+            t = s.shown()
             path.addPath(text_path((t.transformed(m) if moved else t), self.doc))
 
     # ------------------------------------------------------------------------------------------------- painting
