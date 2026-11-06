@@ -322,8 +322,13 @@ class TestPainting:
         hand.c.redraw()
         hand.app.processEvents()
         image = hand.c.grab().toImage()
-        y = round(hand.c.view.to_screen(0, 50)[1])
-        reds = [QColor(image.pixel(x, y)).red() - QColor(image.pixel(x, y)).blue() > 100 for x in range(round(hand.c.view.to_screen(0, 0)[0]), round(hand.c.view.to_screen(200, 0)[0]))]
+        # A one-pixel line sits on whichever row its position rounds to, and that depends on the size of the window, so look at the rows
+        # around it and judge the one the line is on. Nothing red at all would mean the line wasn't drawn, which is its own failure.
+        middle = round(hand.c.view.to_screen(0, 50)[1])
+        left, right = round(hand.c.view.to_screen(0, 0)[0]), round(hand.c.view.to_screen(200, 0)[0])
+        rows = [[QColor(image.pixel(x, y)).red() - QColor(image.pixel(x, y)).blue() > 100 for x in range(left, right)] for y in range(middle - 2, middle + 3)]
+        reds = max(rows, key=sum)
+        assert sum(reds) > 0, "the line wasn't drawn"
         changes = sum(1 for a, b in zip(reds, reds[1:]) if a != b)
         assert changes > 10
 
