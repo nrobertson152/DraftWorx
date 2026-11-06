@@ -10,13 +10,13 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable, Iterable, Iterator
 
 from . import color as colors
 from . import dim as dims
 from .curves import Arc, Circle, EllipseArc, Polyline
-from .shapes import Dimension, Foreign, Insert, Shape
+from .shapes import Dimension, Foreign, Hatch, Insert, Shape
 from .spatial import SpatialIndex
 from .vec import BBox, Vec, bbox_union
 
@@ -202,6 +202,17 @@ def block_used_by(shape: Shape) -> str:
     """The block this shape draws, or an empty string."""
     k = type(shape)
     return shape.block if k is Insert or k is Foreign or k is Dimension else ""
+
+
+def with_refs_moved(shape: Shape, copies: dict[int, int]) -> Shape | None:
+    """A copy of a dimension or hatch attached to the copies of what the original was attached to, when those were copied with it. None
+    if there's nothing to change."""
+    k = type(shape)
+    if k is Dimension and shape.refs and any(r is not None and r[0] in copies for r in shape.refs):
+        return replace(shape, refs=tuple((copies[r[0]], r[1]) if r is not None and r[0] in copies else r for r in shape.refs))
+    if k is Hatch and shape.refs and any(r in copies for r in shape.refs):
+        return replace(shape, refs=tuple(copies.get(r, r) for r in shape.refs))
+    return None
 
 
 def index_key(entity_id: int, sub: int = 0) -> int:
@@ -548,28 +559,30 @@ class Document:
                 self._dim_style_changed(key)
 
     def _attach(self, e: Entity, on: bool) -> None:
-        """Keep track of which dimensions are attached to what."""
+        """Keep track of which dimensions and hatches are attached to what."""
         s = e.shape
-        if type(s) is not Dimension or not s.refs:
+        k = type(s)
+        if (k is not Dimension and k is not Hatch) or not s.refs:
             return
         for ref in s.refs:
             if ref is None:
                 continue
+            target = ref[0] if k is Dimension else ref
             if on:
-                self._dependents.setdefault(ref[0], set()).add(e.id)
+                self._dependents.setdefault(target, set()).add(e.id)
             else:
-                found = self._dependents.get(ref[0])
+                found = self._dependents.get(target)
                 if found is not None:
                     found.discard(e.id)
                     if not found:
-                        del self._dependents[ref[0]]
+                        del self._dependents[target]
 
     def attached_to(self, eid: int) -> set[int]:
-        """The dimensions attached to an object."""
+        """The dimensions and hatches attached to an object."""
         return set(self._dependents.get(eid, ()))
 
     def _follow_up(self, t: Transaction) -> None:
-        """Dimensions attached to something this change moved follow it, in the same step, so one undo puts both back."""
+        """Dimensions and hatches attached to something this change moved follow it, in the same step, so one undo puts both back."""
         changed: set[int] = set()
         for (table, key), c in list(t._changes.items()):
             if table == "entity" and (c.old is None or c.new is None or c.old.shape != c.new.shape):
@@ -580,7 +593,7 @@ class Document:
         for eid in changed:
             todo |= self._dependents.get(eid, set())
             e = self.entities.get(eid)
-            if e is not None and type(e.shape) is Dimension and e.shape.refs:
+            if e is not None and type(e.shape) in (Dimension, Hatch) and e.shape.refs:
                 todo.add(eid)
 
         def shape_of(i: int):
@@ -588,9 +601,15 @@ class Document:
             return found.shape if found is not None else None
         for did in sorted(todo):
             e = self.entities.get(did)
-            if e is None or type(e.shape) is not Dimension:
+            if e is None:
                 continue
-            followed = dims.follow(e.shape, shape_of, did in changed)
+            if type(e.shape) is Dimension:
+                followed = dims.follow(e.shape, shape_of, did in changed)
+            elif type(e.shape) is Hatch:
+                from .hatch import follow
+                followed = follow(e.shape, self, did in changed)
+            else:
+                continue
             if followed is not None:
                 t.replace(did, followed)
 

@@ -99,15 +99,39 @@ def _edge(t: _Tags):
     return None
 
 
-def _hatch(tags: list, flip: int) -> tuple:
+def _chained(edges: list) -> list:
+    """A path's edges turned, where a file has them backwards, so each starts where the one before it ends."""
+    if len(edges) < 2:
+        return edges
+    box = None
+    for c in edges:
+        b = c.bbox()
+        box = b if box is None else (min(box[0], b[0]), min(box[1], b[1]), max(box[2], b[2]), max(box[3], b[3]))
+    eps = max(box[2] - box[0], box[3] - box[1], 1e-12) * 1e-6
+
+    def meets(p, q) -> bool:
+        return abs(p[0] - q[0]) <= eps and abs(p[1] - q[1]) <= eps
+    out = list(edges)
+    if not meets(out[0].end, out[1].start) and not meets(out[0].end, out[1].end) and (meets(out[0].start, out[1].start) or meets(out[0].start, out[1].end)):
+        out[0] = out[0].reversed()
+    for i in range(1, len(out)):
+        if not meets(out[i - 1].end, out[i].start) and meets(out[i - 1].end, out[i].end):
+            out[i] = out[i].reversed()
+    return out
+
+
+def hatch_paths(tags: list, flip: int, shown: list | None = None) -> tuple[list[tuple], _Tags]:
+    """A hatch's boundary paths, each a loop of curves end to end, in the drawing's coordinates; and where reading got to. `shown` is given
+    the paths as a file draws them: a polyline path as one polyline."""
     t = _Tags(tags)
     if not t.find(91):
-        return ()
-    out = []
+        return [], t
+    loops: list[tuple] = []
     for _ in range(min(inum(t.take(91)), 100_000)):
         if t.code() != 92:
             break
         flags = inum(t.take(92))
+        loop: list = []
         if flags & 2:
             has_bulges = inum(t.take(72)) != 0
             t.take(73)
@@ -121,19 +145,33 @@ def _hatch(tags: list, flip: int) -> tuple:
             if len(pts) > 1 and pts[0] == pts[-1]:
                 pts.pop()
                 bulges.pop()
-            if pts:
-                out.append(Polyline(tuple(pts), tuple(bulges), True))
+            if len(pts) > 1:
+                whole = Polyline(tuple(pts), tuple(bulges), True)
+                loop = list(whole.segments)
+                if shown is not None:
+                    shown.append(whole.transformed(_FLIP) if flip < 0 else whole)
         else:
             for _ in range(inum(t.take(93))):
                 if t.code() != 72:
                     break
                 edge = _edge(t)
                 if edge is not None:
-                    out.append(edge)
+                    loop.extend(edge.segments if type(edge) is Polyline else (edge,))
+                    if shown is not None:
+                        shown.append(edge.transformed(_FLIP) if flip < 0 else edge)
+            loop = _chained(loop)
         if t.code() == 97:
             for _ in range(inum(t.take(97))):
                 t.take(330)
-    return tuple(c.transformed(_FLIP) for c in out) if flip < 0 else tuple(out)
+        if loop:
+            loops.append(tuple(c.transformed(_FLIP) for c in loop) if flip < 0 else tuple(loop))
+    return loops, t
+
+
+def _hatch(tags: list, flip: int) -> tuple:
+    shown: list = []
+    hatch_paths(tags, flip, shown)
+    return tuple(shown)
 
 
 def _points(tags: list, code: int) -> list[Vec]:

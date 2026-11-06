@@ -29,7 +29,7 @@ draftworx/
     config, recovery, files     settings, unsaved work, opening and saving
     ops/                        trim, extend, offset, fillet, cleanup and the like
     dim                         what a dimension measures, says and draws, and how it follows what it's attached to
-    hatch, display              what hatches draw
+    regions, hatch              the area round a point, and what a hatch draws there
   gui/             PySide6. Thin: it forwards events and paints what the core says.
   integrations/    RevisionWorx, OpenSchematix, OpenMeridian, through their files and command lines
   cli              `draftworx`, one JSON object per command for other programs
@@ -163,6 +163,14 @@ When a Transaction finishes, any dimension attached to something it changed is u
 
 *Challenged:* AutoCAD's way, a separate associativity object watching the geometry through reactors. That's more general (it can watch an intersection), but it's a second place that has to be kept right on every change, undo and file trip. *Given up:* DXF files don't carry the attachment (DXF.md).
 
+### ADR-14: A hatch finds its area with a map of the curves round the click, and follows by matching areas
+
+Clicking inside an area cuts the curves near the click where they meet, and walks the pieces with the area always on the left, turning as sharply left as possible at every corner. Each walk goes round one area. The area round the click is the smallest that holds it, less the islands directly inside it. Walks that go up and back down the same piece are a line poking in, or a bridge to an island, and those pieces are dropped. Curves are used whole if any of them is near, so the map is exact for what it has, and if the area reaches past what was looked at, more is looked at.
+
+A hatch is its loops and its pattern. The pattern's lines are worked out from them each time, like a dimension's, and end exactly on curved edges. When the objects round it change, it becomes the area they now make that's bounded by most nearly the same objects, inside the same Transaction as the change (ADR-13), so it follows a stretch and a move, holes included.
+
+*Challenged:* following the point it was made from, as the first version did. A boundary moved away from that point loses it, and moving a hole changes nothing a point can see. *Challenged:* AutoCAD's associativity, which records which objects make which loop. It's more exact about a loop made of part of an object, and is a second record to keep right on every change, undo and file trip.
+
 ## What's measured, and what it should stay under
 
 `tools/bench.py` reports these, and CI runs a quick version. They're from this development machine, not a promise about yours.
@@ -177,6 +185,7 @@ When a Transaction finishes, any dimension attached to something it changed is u
 | Write a DXF of the same | under 5 s (measured 0.8 s, or 0.3 s for one that hasn't changed) |
 | A mouse move, with what it paints | under 16 ms (measured 1 ms, offscreen) |
 | Offset a polyline of 10,000 pieces | measured 3.4 s round a ring, 1.8 s along a fine zigzag; an offset that's being previewed gives up after 0.15 s |
+| Find the room round a click, among 100,000 lines | measured 56 ms; a hatch being previewed gives up after 0.15 s |
 | A pan with everything in view | under 50 ms (measured 30 ms) |
 | Repaint zoomed in | measured 13 ms |
 | First paint after opening | measured 235 ms |

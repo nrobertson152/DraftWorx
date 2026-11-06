@@ -16,6 +16,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from draftworx.core import hatch as hatches  # noqa: E402
+from draftworx.core import regions  # noqa: E402
 from draftworx.core.curves import Arc, Circle, Line, Polyline  # noqa: E402
 from draftworx.core.dxf import read_dxf, write_dxf  # noqa: E402
 from draftworx.core.model import Document  # noqa: E402
@@ -159,6 +161,21 @@ def main() -> int:
     zigzag = Polyline(tuple(Vec(i * 0.02, 0.1 * (i % 2)) for i in range(m)))
     t, _ = timed(lambda: offset(zigzag, 10.0, Vec(0.0, 50.0)))
     results.append((f"offset a fine zigzag of {m}, well clear", t, 20.0 * k))
+
+    side = max(10, int(math.sqrt(n / 4)))
+    rooms = Document()
+    with rooms.transaction("Rooms") as tx:
+        for i in range(side):
+            for j in range(side):
+                x, y = i * 100.0, j * 100.0
+                for a, b in (((x, y), (x + 90, y)), ((x + 90, y), (x + 90, y + 90)), ((x + 90, y + 90), (x, y + 90)), ((x, y + 90), (x, y))):
+                    tx.add(Line(Vec(*a), Vec(*b)))
+    middle = side // 2 * 100.0 + 45.0
+    t, found = timed(lambda: regions.find(rooms, Vec(middle, middle), 150.0))
+    assert isinstance(found, regions.Region)
+    results.append((f"hatch: find a room among {len(rooms.entities)} lines", t, 0.5))
+    t, _ = timed(lambda: hatches.pieces(hatches.made_from(found, "ANSI37", 0.05, 0.3, Vec(middle, middle))))
+    results.append(("hatch: a fine pattern across a room", t, 0.5))
 
     results.extend(window_times(doc, k))
 

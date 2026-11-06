@@ -12,9 +12,10 @@ from ..curves import Arc, Circle, EllipseArc, Line, Polyline, Spline, spline_thr
 from ..model import BlockDef, DimStyle, Document, Entity, Layer, Linetype, Settings, Style, TextStyle
 from ..native import FormatError, check_block_cycles
 from ..rawsource import Raw
-from ..shapes import AttDef, Attrib, Dimension, Foreign, Insert, MText, Node, Solid, Text
+from ..hatch import known as known_pattern
+from ..shapes import AttDef, Attrib, Dimension, Foreign, Hatch, Insert, MText, Node, PatternLine, Solid, Text
 from ..vec import TAU, Vec, ccw_sweep
-from .foreign import IN_PART, block_of, curves_of_foreign
+from .foreign import IN_PART, block_of, curves_of_foreign, hatch_paths
 from .tags import Decoded, clean, decode, decode_text, fnum, header_state, inum, pairs
 
 MOST_OBJECTS = 8_000_000
@@ -22,7 +23,8 @@ MOST_COORDINATE = 1e100     # further out than anything real, and near where ari
 UNITS = {0: "none", 1: "in", 2: "ft", 4: "mm", 5: "cm", 6: "m"}
 _LUNITS = {1: "scientific", 2: "decimal", 3: "engineering", 4: "architectural", 5: "fractional"}
 #: What becomes something you can edit. Everything else is kept as text.
-EDITABLE = {"LINE", "ARC", "CIRCLE", "ELLIPSE", "POINT", "LWPOLYLINE", "POLYLINE", "SPLINE", "TEXT", "MTEXT", "SOLID", "TRACE", "INSERT", "ATTDEF", "DIMENSION"}
+EDITABLE = {"LINE", "ARC", "CIRCLE", "ELLIPSE", "POINT", "LWPOLYLINE", "POLYLINE", "SPLINE", "TEXT", "MTEXT", "SOLID", "TRACE", "INSERT", "ATTDEF", "DIMENSION",
+            "HATCH"}
 _PLURALS = {"HATCH": "hatches", "3DSOLID": "3D solids", "3DFACE": "3D faces", "ACAD_TABLE": "tables", "MLEADER": "multileaders", "MULTILEADER": "multileaders",
             "ACAD_PROXY_ENTITY": "proxy objects", "ARC_DIMENSION": "arc dimensions", "LARGE_RADIAL_DIMENSION": "large radial dimensions", "XLINE": "construction lines",
             "RAY": "rays", "POLYLINE": "3D polylines and meshes"}
@@ -353,6 +355,8 @@ class _Reader:
             return None if self._flipped(d) == 0 else self._mtext(tags, d)
         if kind == "DIMENSION":
             return self._dimension(tags, d)
+        if kind == "HATCH":
+            return self._hatch(tags, d)
         flip = self._flipped(d)
         if flip == 0:
             return None
@@ -432,6 +436,64 @@ class _Reader:
         if shape.measure in ("radius", "diameter") and 11 in d:
             shape = replace(shape, at=self._radial_at(shape, p(11)))
         return replace(shape, block=block)
+
+    def _hatch(self, tags: list, d: dict) -> Hatch | None:
+        """A hatch that can be changed: its boundary paths, its pattern as the file defines it, and the points it was made from. None, so it
+        stays as the file had it, for a gradient, one tilted out of the plane, or a pattern the file doesn't define."""
+        flip = self._flipped(d)
+        if flip == 0:
+            return None
+        loops, t = hatch_paths(tags, flip)
+        if not loops:
+            return None
+        solid = bool(inum(d.get(70, "0")) & 1)
+        name = clean(d.get(2, "")).strip()
+        angle, scale = 0.0, 1.0
+        world: list[tuple[float, Vec, Vec, tuple[float, ...]]] = []
+        seeds: list[Vec] = []
+        while t.code() is not None:
+            code = t.code()
+            if code == 52:
+                angle = math.radians(fnum(t.take(52)))
+            elif code == 41:
+                scale = fnum(t.take(41), 1.0)
+            elif code == 78:
+                for _ in range(min(inum(t.take(78)), 10_000)):
+                    if t.code() != 53:
+                        break
+                    a = math.radians(fnum(t.take(53)))
+                    base = Vec(fnum(t.take(43)), fnum(t.take(44)))
+                    step = Vec(fnum(t.take(45)), fnum(t.take(46)))
+                    dashes = tuple(fnum(t.take(49)) for _ in range(min(inum(t.take(79)), 1000)) if t.code() == 49)
+                    world.append((a, base, step, dashes))
+            elif code == 98:
+                for _ in range(min(inum(t.take(98)), 10_000)):
+                    if t.code() != 10:
+                        break
+                    seeds.append(t.point(10))
+            elif code == 450:
+                if inum(t.take(450)) == 1:
+                    return None         # a gradient
+            elif code == 1001:
+                break
+            else:
+                t.i += 1
+        if flip < 0:
+            angle = math.pi - angle
+            world = [(math.pi - a, Vec(-b[0], b[1]), Vec(-st[0], st[1]), ds) for a, b, st, ds in world]
+            seeds = [Vec(-p[0], p[1]) for p in seeds]
+        if not (scale > 0.0 and math.isfinite(scale)):
+            scale = 1.0
+        if solid:
+            return Hatch(tuple(loops), "SOLID", scale, angle, Vec(0.0, 0.0), tuple(seeds))
+        if not world and known_pattern(name) is None:
+            return None
+        lines = []
+        for a, base, step, dashes in world:
+            u = Vec(math.cos(a), math.sin(a))
+            lines.append(PatternLine(a - angle, base.rotated(-angle) * (1.0 / scale), step.dot(u) / scale, step.dot(u.perp()) / scale,
+                                     tuple(x / scale for x in dashes)))
+        return Hatch(tuple(loops), name or "USER", scale, angle % math.tau, Vec(0.0, 0.0), tuple(seeds), (), tuple(lines))
 
     def _radial_at(self, d: Dimension, middle: Vec) -> Vec:
         """Where a radius or diameter goes, from where its text's middle is: what a file holds. Outside the curve its line runs out to just under the

@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
-
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 from . import dim as dims
 from .curves import Arc, Circle, EllipseArc, Line, Polyline, Spline
 from .geometry import arc_through
-from .shapes import AttDef, Dimension, Insert, MText, Node, Solid, Text
+from .shapes import AttDef, Dimension, Hatch, Insert, MText, Node, Solid, Text
 from .vec import TAU, Affine, Vec
 
 
@@ -58,6 +56,10 @@ def grips_of(s, style=None) -> list[Grip]:
         return [Grip(s.p, "move")]
     if k is AttDef:
         return [Grip(s.attrib.text.p, "move")]
+    if k is Hatch:
+        x0, y0, x1, y1 = s.bbox()
+        middle = Vec((x0 + x1) / 2.0, (y0 + y1) / 2.0)
+        return [Grip(middle, "move", 0, middle)]
     if k is Solid:
         return [Grip(p, "corner", i) for i, p in enumerate(s.pts)]
     return []

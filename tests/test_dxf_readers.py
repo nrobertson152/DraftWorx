@@ -15,8 +15,8 @@ import pytest
 from draftworx.core.curves import Arc, Circle, EllipseArc, Polyline
 from draftworx.core.dxf import VERSIONS, read_dxf, write_dxf
 from draftworx.core.model import BlockDef, Document, Entity, Layer, Style
-from draftworx.core.shapes import Dimension, Insert, MText, Node, Solid, Text
-from draftworx.core.vec import TAU, Vec
+from draftworx.core.shapes import Dimension, Hatch, Insert, MText, Node, Solid, Text
+from draftworx.core.vec import TAU, Affine, Vec
 from driver import line
 
 
@@ -37,6 +37,9 @@ def drawing() -> Document:
         t.add(Insert("Bolt", Vec(100.0, 100.0), 2.0, 2.0, math.pi / 2.0))
         t.add(Dimension("linear", (Vec(0.0, 0.0), Vec(100.0, 0.0)), Vec(50.0, -20.0)))
         t.add(Dimension("diameter", (Vec(50.0, 50.0), Vec(50.0, 75.0)), Vec(50.0, 90.0)))
+        square = (line(400, 0, 500, 0), line(500, 0, 500, 100), line(500, 100, 400, 100), line(400, 100, 400, 0))
+        t.add(Hatch((square,), "SOLID"))
+        t.add(Hatch((tuple(c.transformed(Affine.translation(200, 0)) for c in square), (Circle(Vec(650.0, 50.0), 20.0).as_arc().reversed(),)), "ANSI31", 2.0))
     return d
 
 
@@ -71,6 +74,19 @@ def test_gdal_reads_what_was_drawn(version, tmp_path):
     circle = next(f for f in features if "Circle" in f["properties"]["SubClasses"] and "Arc" not in f["properties"]["SubClasses"])
     for x, y, *_ in circle["geometry"]["coordinates"]:
         assert math.hypot(x - 50.0, y - 50.0) == pytest.approx(25.0, abs=0.01)
+    # hatches, as areas: their boundaries, holes included
+    rings = []
+    for f in features:
+        if "AcDbHatch" in f["properties"]["SubClasses"]:
+            g = f["geometry"]
+            polygons = [g["coordinates"]] if g["type"] == "Polygon" else g["coordinates"] if g["type"] == "MultiPolygon" else []
+            rings.append([ring for poly in polygons for ring in poly])
+    assert len(rings) == 2
+    for found, x0 in zip(sorted(rings, key=lambda r: min(p[0] for p in r[0])), (400.0, 600.0)):
+        xs = [p[0] for p in found[0]]
+        ys = [p[1] for p in found[0]]
+        assert (min(xs), min(ys), max(xs), max(ys)) == pytest.approx((x0, 0.0, x0 + 100.0, 100.0), abs=1e-6)
+    assert len(max(rings, key=len)) == 2          # the circle is a hole
     # the block's line, turned a quarter and doubled
     lines = [f["geometry"]["coordinates"] for f in features if f["geometry"]["type"] == "LineString" and len(f["geometry"]["coordinates"]) == 2]
     assert any(a[:2] == pytest.approx([100.0, 90.0], abs=1e-6) and b[:2] == pytest.approx([100.0, 110.0], abs=1e-6) for a, b in lines)

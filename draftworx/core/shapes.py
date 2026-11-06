@@ -323,6 +323,66 @@ class Dimension:
 
 
 @dataclass(frozen=True, slots=True)
+class PatternLine:
+    """One family of a hatch pattern's lines, as a pattern file has it: lines at `angle` through `base`, each next one `along` further along it
+    and `across` to its left, dashed by `dashes` (a dash is positive, a gap negative, a dot 0). Sizes are the pattern's own, before its scale."""
+    angle: float
+    base: Vec = Vec(0.0, 0.0)
+    along: float = 0.0
+    across: float = 1.0
+    dashes: tuple[float, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class Hatch:
+    """An area filled solid or with a pattern. `loops` are closed boundaries, each curves joined end to end, and what's inside an odd number
+    of them is filled. `pattern` is "SOLID" or a pattern's name; `lines` is its definition when it isn't one this program knows, as from a
+    file. The pattern's sizes are multiplied by `scale`, it's turned by `angle` and its lines start from `origin`.
+
+    `seeds` are the points it was made from, by clicking inside, and `refs` the objects round them that it follows (`hatch.follow`)."""
+    loops: tuple[tuple, ...]
+    pattern: str = "SOLID"
+    scale: float = 1.0
+    angle: float = 0.0
+    origin: Vec = Vec(0.0, 0.0)
+    seeds: tuple[Vec, ...] = ()
+    refs: tuple[int, ...] = ()
+    lines: tuple[PatternLine, ...] = ()
+
+    kind = "hatch"
+
+    def __post_init__(self):
+        if not self.loops or not all(self.loops):
+            raise ValueError("a hatch needs a boundary")
+        if not (self.scale > 0.0 and math.isfinite(self.scale)):
+            raise ValueError("a hatch pattern's scale has to be more than zero")
+
+    @property
+    def solid(self) -> bool:
+        return self.pattern.casefold() == "solid"
+
+    def bbox(self) -> BBox:
+        box = None
+        for loop in self.loops:
+            for c in loop:
+                box = bbox_union(box, c.bbox())
+        return box
+
+    def transformed(self, m: Affine) -> "Hatch":
+        """Moved, turned and scaled with its boundary. A mirror image keeps its pattern the way it was, as AutoCAD does by default,
+        so writing on it isn't mirrored."""
+        loops = tuple(tuple(c.transformed(m) for c in loop) for loop in self.loops)
+        angle = self.angle
+        if not m.is_mirrored():
+            turn = m.apply_vector(Vec(1.0, 0.0))
+            if turn.length2() > 0.0:
+                angle = (self.angle + math.atan2(turn[1], turn[0])) % math.tau
+        k = m.uniform_scale()
+        return replace(self, loops=loops, scale=self.scale * k if k > 0.0 else self.scale, angle=angle, origin=m.apply(self.origin),
+                       seeds=tuple(m.apply(p) for p in self.seeds))
+
+
+@dataclass(frozen=True, slots=True)
 class Foreign:
     """Something a file holds that can't be edited here. It goes back out exactly as it came in, from its entity's `source`.
 
@@ -346,5 +406,5 @@ class Foreign:
 
 
 Curve = Line | Arc | Circle | EllipseArc | Spline
-Shape = Curve | Polyline | Node | Solid | Text | MText | AttDef | Insert | Dimension | Foreign
+Shape = Curve | Polyline | Node | Solid | Text | MText | AttDef | Insert | Dimension | Hatch | Foreign
 CURVES = (Line, Arc, Circle, EllipseArc, Spline)

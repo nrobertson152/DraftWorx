@@ -4,7 +4,7 @@ DraftWorx is deliberately small. A simple result mustn't look like an exact one,
 
 ## Not there yet
 
-This is early. You can draw lines, polylines, rectangles, circles, arcs, ellipses, points and text, select them, drag their handles, move, copy, rotate, scale, mirror and erase them, trim, extend, offset, fillet, chamfer, array, break, join, explode and stretch them, match one's look to another's, dimension them, and open and save DXF as well as `.draftworx`. Nothing else yet: no hatch, block creation or printing. See `ROADMAP.md`.
+This is early. You can draw lines, polylines, rectangles, circles, arcs, ellipses, points and text, select them, drag their handles, move, copy, rotate, scale, mirror and erase them, trim, extend, offset, fillet, chamfer, array, break, join, explode and stretch them, match one's look to another's, dimension and hatch them, and open and save DXF as well as `.draftworx`. Nothing else yet: no block creation or printing. See `ROADMAP.md`.
 
 ## Changing things
 
@@ -19,13 +19,25 @@ This is early. You can draw lines, polylines, rectangles, circles, arcs, ellipse
 
 - One tool measures lengths (across, up, along or at an angle), radii, diameters and angles. There are no ordinate, arc-length, baseline or chained dimensions, and no tolerances or alternate units.
 - A dimension follows what it's attached to: the ends of a line or arc, a polyline's corners, a circle's centre and size. Not where two things cross, which isn't one object's point, and not a point on a curve chosen freely. Moving or copying a dimension on its own lets go, as does dragging one of its points.
-- What it's attached to is kept in `.draftworx` files only, not in DXF (`DXF.md`).
+- What it's attached to is kept in `.draftworx` files only, not in DXF (`DXF.md`). Copied together with what it measures, a copy is attached to the copies.
 - Dimension styles from a file are used as far as their sizes, rounding, units and text placement go. Their arrowhead blocks, colours, text boxes and fit options aren't: arrows are filled, or ticks.
 - When there's no room between the arrows they go outside, but the text stays in the middle, where it can overlap them.
 
+## Hatches
+
+- A hatch fills the area round where you click: the smallest area closed round it by lines, arcs, circles, ellipses, splines, polylines, solids and what blocks draw. Text, dimensions, points and other hatches aren't boundaries, so text inside an area is hatched over.
+- An island inside the area is left out, and what's inside an island isn't hatched by the same click (AutoCAD's "outer" style). Click inside it to hatch it too.
+- An area has to be closed. Gaps up to a width you give (G) can be closed with straight bridges; otherwise the program shows where it's open.
+- Finding an area by clicking stops past 20,000 curves round the point, and says so.
+- A hatch follows the objects round it when they're moved or stretched, as long as they still close round an area bounded by mostly the same objects. Trim, break or erase one of them, or move the hatch on its own, and it lets go and stays as it is.
+- There are a dozen patterns built in, named as other programs name them. Pattern files (`.pat`) can't be loaded, but a pattern a DXF file defines is kept and drawn. Gradient fills from a file are kept and shown by their outlines, and can't be changed.
+- A mirrored hatch keeps its pattern the way it was, as AutoCAD does by default. Its boundary is mirrored.
+- Where a boundary is curved, a pattern's lines end exactly on it. A solid fill's edge is drawn as fine chords, as every curve is.
+- Hatches aren't snapped to; the objects round them are.
+
 ## DXF
 
-What's kept, what's shown and what isn't are in `DXF.md`. The short version: nothing in a file is lost by opening and saving it, but dimensions, hatches, tables, leaders and 3D objects from a file can't be changed yet, hatches show only their outlines, and some objects aren't shown at all. The program says which when it opens the file.
+What's kept, what's shown and what isn't are in `DXF.md`. The short version: nothing in a file is lost by opening and saving it, but tables, leaders, gradient fills and 3D objects from a file can't be changed yet, some are shown only by their outlines, and some aren't shown at all. The program says which when it opens the file.
 
 ## By design
 

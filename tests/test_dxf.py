@@ -26,7 +26,7 @@ from draftworx.core.model import BlockDef, Document, Entity, Layer, Linetype, St
 from draftworx.core.native import FormatError, dumps, loads  # noqa: E402
 from draftworx.core.safefile import SaveError  # noqa: E402
 from draftworx.core.select import curves_of, pick  # noqa: E402
-from draftworx.core.shapes import AttDef, Attrib, Dimension, Foreign, Insert, MText, Node, Solid, Text  # noqa: E402
+from draftworx.core.shapes import AttDef, Attrib, Dimension, Foreign, Hatch, Insert, MText, Node, Solid, Text  # noqa: E402
 from draftworx.core.snap import Kind, SnapEngine, SnapQuery  # noqa: E402
 from draftworx.core.vec import TAU, Affine, Vec  # noqa: E402
 from driver import Person, line  # noqa: E402
@@ -748,6 +748,14 @@ class TestSeenFromBehind:
         doc = self.extruded()
         h = doc.modelspace().add_hatch(dxfattribs={"extrusion": (0, 0, -1)})
         h.paths.add_polyline_path([(1, 1), (3, 1), (3, 3)], is_closed=True)
+        s = of_type(read_strict(encoded(doc))[0], Hatch)[0].shape
+        assert {c.start for c in s.loops[0]} == {Vec(-1.0, 1.0), Vec(-3.0, 1.0), Vec(-3.0, 3.0)}
+
+    def test_a_gradient_hatch_outline(self):
+        doc = self.extruded()
+        h = doc.modelspace().add_hatch(dxfattribs={"extrusion": (0, 0, -1)})
+        h.set_gradient((255, 0, 0), (0, 0, 255))
+        h.paths.add_polyline_path([(1, 1), (3, 1), (3, 3)], is_closed=True)
         s = of_type(read_strict(encoded(doc))[0], Foreign)[0].shape
         assert set(s.curves[0].pts) == {Vec(-1.0, 1.0), Vec(-3.0, 1.0), Vec(-3.0, 3.0)}
 
@@ -791,9 +799,25 @@ class TestWhatCantBeEdited:
             t.remove(dim.id)
             t.remove_block(dim.shape.block)
 
-    def test_a_hatch_shows_its_boundary(self):
+    def test_a_hatch_opens_as_one_with_its_paths_as_loops(self):
         doc = ezdxf.new("R2013")
         h = doc.modelspace().add_hatch()
+        h.set_pattern_fill("ANSI31", scale=2.0, angle=30.0)
+        h.paths.add_polyline_path([(0, 0, 0.5), (5, 0), (5, 5)], is_closed=True)
+        e = h.paths.add_edge_path()
+        e.add_line((10, 10), (20, 10))
+        e.add_arc((15, 10), 5, 0, 180)
+        mine, _ = read_strict(encoded(doc))
+        s = of_type(mine, Hatch)[0].shape
+        assert [[type(c) for c in loop] for loop in s.loops] == [[Arc, Line, Line], [Line, Arc]]
+        assert s.loops[1][0].end == s.loops[1][1].start       # each edge starts where the one before it ends
+        assert (s.pattern, s.scale, math.degrees(s.angle)) == ("ANSI31", pytest.approx(2.0), pytest.approx(30.0))
+        assert s.lines
+
+    def test_a_gradient_hatch_shows_its_boundary(self):
+        doc = ezdxf.new("R2013")
+        h = doc.modelspace().add_hatch()
+        h.set_gradient((255, 0, 0), (0, 0, 255))
         h.paths.add_polyline_path([(0, 0, 0.5), (5, 0), (5, 5)], is_closed=True)
         e = h.paths.add_edge_path()
         e.add_line((10, 10), (20, 10))
@@ -880,7 +904,7 @@ class TestWhatCantBeEdited:
     def test_changing_its_layer_changes_only_that(self):
         data = encoded(everything("R2013"))
         doc, _ = read_strict(data)
-        h = next(e for e in of_type(doc, Foreign) if e.shape.dxf_type == "HATCH")
+        h = of_type(doc, Hatch)[0]
         with doc.transaction("x") as t:
             t.replace(h.id, style=replace(h.style, layer="0", color=1))
         back = write_dxf(doc)

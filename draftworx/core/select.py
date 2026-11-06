@@ -8,7 +8,7 @@ from typing import Iterator
 from . import dim as dims
 from .curves import Arc, Circle, EllipseArc, Line, Polyline, Spline
 from .model import Document, Entity, split_key
-from .shapes import AttDef, Dimension, Foreign, Insert, MText, Node, Solid, Text
+from .shapes import AttDef, Dimension, Foreign, Hatch, Insert, MText, Node, Solid, Text
 from .vec import IDENTITY, Affine, BBox, Vec, bbox_contains
 
 _CURVES = (Line, Arc, Circle, EllipseArc, Spline)
@@ -97,10 +97,32 @@ def _in_polygon(pts, p) -> bool:
     return inside
 
 
+def hatch_distance(h: Hatch, p) -> float:
+    """How far a point is from a hatch's area: zero inside it."""
+    from .hatch import polygons
+    from .regions import inside_polygon
+    box = h.bbox()
+    if box[0] <= p[0] <= box[2] and box[1] <= p[1] <= box[3]:
+        inside = False
+        for poly in polygons(h):
+            if len(poly) > 2 and inside_polygon(poly, p):
+                inside = not inside
+        if inside:
+            return 0.0
+    best = math.inf
+    for loop in h.loops:
+        for c in loop:
+            q = c.project(p)[1]
+            best = min(best, math.hypot(q[0] - p[0], q[1] - p[1]))
+    return best
+
+
 def distance_to(doc: Document, e: Entity, p, _depth: int = 0) -> float:
     """How far a point is from what an entity draws."""
     s = e.shape
     k = type(s)
+    if k is Hatch:
+        return hatch_distance(s, p)
     if k in _CURVES:
         q = s.project(p)[1]
         return math.hypot(q[0] - p[0], q[1] - p[1])
@@ -186,6 +208,8 @@ def pick(doc: Document, p, px: float, reach: float = PICK_REACH, skip_locked: bo
             continue
         d = distance_to(doc, e, p)
         if d <= r:
+            if type(e.shape) is Hatch:
+                d = max(d, r * 0.95)        # anything drawn over a hatch, or near it, wins the click
             found.append((d, -e.order, eid))
     found.sort()
     return [f[2] for f in found]
@@ -240,6 +264,9 @@ def _entity_touches_box(doc: Document, e: Entity, box: BBox, px: float) -> bool:
             or _in_polygon(corners, ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2))
     if k is Solid and _in_polygon(s.pts, ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2)):
         return True
+    if k is Hatch:
+        middle = ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2)
+        return hatch_distance(s, middle) == 0.0 or any(curve_touches_box(c, box, px) for loop in s.loops for c in loop)
     if k is Dimension:
         for item in drawn_by(doc, s):
             if type(item) is Text and _entity_touches_box(doc, Entity(0, item), box, px):

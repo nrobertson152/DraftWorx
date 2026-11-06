@@ -6,7 +6,7 @@ import math
 import time
 
 from . import command
-from .modify import selected
+from .modify import attach_copies, selected
 from ..curves import Polyline
 from ..model import split_key
 from ..ops.corner import chamfer, corner_of_polyline, every_corner, fillet
@@ -358,6 +358,7 @@ def _copies(s, label: str, ids: list[int], transforms: list[Affine]) -> int:
     skipped = 0
     with s.doc.transaction(label) as t:
         for m in transforms:
+            copies: dict[int, int] = {}
             for i in ids:
                 e = s.doc.entities.get(i)
                 if e is None:
@@ -365,8 +366,9 @@ def _copies(s, label: str, ids: list[int], transforms: list[Affine]) -> int:
                 if type(e.shape) is Foreign:
                     skipped += 1
                     continue
-                t.add(e.shape.transformed(m), e.style)
+                copies[i] = t.add(e.shape.transformed(m), e.style)
                 count += 1
+            attach_copies(t, copies)
     if skipped:
         s.message = "What came from a file and can't be changed here wasn't copied."
     return count
