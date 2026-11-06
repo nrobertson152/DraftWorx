@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "draftworx"
+dynamic = ["version"]
+description = "A lightweight, offline 2D CAD program that is simple to learn and exceptionally good at drafting"
+readme = "README.md"
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "Nate Robertson" }]
+requires-python = ">=3.13"
+dependencies = ["PySide6-Essentials>=6.8"]   # LGPL-3.0, GPL-compatible, as in RevisionWorx and OpenMeridian. Only draftworx/gui uses it.
+classifiers = [
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Environment :: X11 Applications :: Qt",
+    "Intended Audience :: Manufacturing",
+    "Topic :: Scientific/Engineering :: Computer Aided Design",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "hypothesis", "ezdxf", "pillow", "pyflakes"]
+
+[project.urls]
+"Support development" = "https://ko-fi.com/nr270343"
+
+[project.gui-scripts]
+draftworx-gui = "draftworx.gui.app:main"
+
+[project.scripts]
+draftworx = "draftworx.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "draftworx.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["draftworx*"]
+
+[tool.setuptools.package-data]
+draftworx = ["resources/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]
+addopts = "--strict-markers"

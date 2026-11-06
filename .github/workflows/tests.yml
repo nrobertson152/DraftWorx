@@ -1,0 +1,44 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: pytest / ${{ matrix.os }} / Python 3.13
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install Qt's system libraries (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libegl1 libgl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0
+      - name: Install project and test dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Byte-compile
+        run: python -m compileall -q draftworx tests
+      - name: Look for mistakes
+        run: python -m pyflakes draftworx tests tools
+      - name: Run pytest
+        run: python -m pytest -q --tb=short -ra
+      - name: Self-test
+        run: python -m draftworx --self-test
+      - name: Speed
+        run: python tools/bench.py --quick
