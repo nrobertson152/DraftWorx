@@ -60,3 +60,4 @@ def test_nothing_reaches_for_the_network():
 def test_the_self_test_runs_as_a_command():
     r = subprocess.run([sys.executable, "-m", "draftworx", "--self-test"], cwd=ROOT, capture_output=True, text=True, timeout=120)
     assert r.returncode == 0, r.stderr
+    assert "PDF and SVG all work" in r.stdout

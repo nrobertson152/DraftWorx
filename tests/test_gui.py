@@ -968,9 +968,16 @@ class TestPaper:
         assert hand.doc is not None and sheets.frame_insert(hand.w.session.doc) is not None
         assert not hand.w.session.doc.dirty and "A3" in hand.w.session.message
 
+    def test_exporting_an_svg(self, hand, tmp_path, monkeypatch):
+        self.room(hand)
+        monkeypatch.setattr("draftworx.gui.window.QFileDialog.getSaveFileName", lambda *a, **k: (str(tmp_path / "room"), "SVG (*.svg)"))
+        assert hand.w.export_svg_dialog()
+        data = (tmp_path / "room.svg").read_bytes()
+        assert data.startswith(b"<?xml") and b'width="420mm"' in data and "Exported room.svg" in hand.s.message
+
     def test_print_and_pdf_are_in_the_file_menu_and_the_palette(self, hand):
         names = {a.text(): a.shortcut().toString() for a in hand.w.menuBar().actions()[0].menu().actions()}
-        assert names["Print…"] == "Ctrl+P" and names["Export PDF…"] == "Ctrl+Shift+P"
+        assert names["Print…"] == "Ctrl+P" and names["Export PDF…"] == "Ctrl+Shift+P" and "Export SVG…" in names
 
 
 class TestRevisionWorx:

@@ -15,6 +15,7 @@ only goes up for a change that would break a program using this.
 | `parts DRAWING [--csv FILE] [--number N] [--description D] [--revision R]` | the parts list the drawing's blocks make | `number`, `parts` (`number`, `description`, `quantity`, `unit`, `revision`, `references`, `blocks`), `problems` (`where`, `what`), `csv` |
 | `convert DRAWING OUTPUT [--dxf-version V] [--overwrite]` | write it as DXF or `.draftworx`, checked before it takes the name | `path`, `notes` (what had to be simplified to fit) |
 | `pdf DRAWING OUTPUT.pdf [--paper P] [--upright \| --across] [--scale S] [--black] [--overwrite]` | the drawing's sheet as a PDF, to scale | `path`, `paper`, `landscape`, `scale` (`1:50`), `sheet` (its box in the drawing), `notes` |
+| `svg DRAWING OUTPUT.svg [the same options]` | the same sheet as an SVG in millimetres, for Inkscape, a browser or a laser cutter's software | the same as `pdf` |
 
 **PDFs.** With none of `--paper`, `--upright`, `--across` or `--scale`, a drawing that has a sheet is printed on it, exactly as the window
 prints it. Otherwise, or when it has no sheet, a sheet is fitted round what's drawn: on `--paper` (or its own paper, or A3, or Tabloid for
