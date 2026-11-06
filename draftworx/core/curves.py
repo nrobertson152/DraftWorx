@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import bisect
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import cached_property
 from typing import Protocol
 
@@ -924,7 +924,8 @@ class Polyline:
         for i in range(last):
             p, q = pts[i], pts[i + 1 if i + 1 < n else 0]
             b = bulges[i] if bulges else 0.0
-            if b and (p[0] != q[0] or p[1] != q[1]) and math.isfinite(b):
+            # A bulge this small is an arc so huge that working out its points loses more than it departs from a straight line
+            if abs(b) >= 1e-8 and (p[0] != q[0] or p[1] != q[1]) and math.isfinite(b):
                 out.append(bulge_arc(p, q, b))
             else:
                 out.append(Line(p, q))
@@ -945,6 +946,41 @@ class Polyline:
 
     def bbox(self) -> BBox:
         return self._bbox
+
+    def sub(self, t0: float, t1: float) -> "Polyline":
+        """The stretch from t0 to t1, always open, keeping its arcs and widths. On a closed polyline t1 can run past 1, on through its start."""
+        segs = self.segments
+        n = len(segs)
+        if not n:
+            return self
+        x, stop = t0 * n, t1 * n
+        pts: list[Vec] = []
+        bulges: list[float] = []
+        widths: list[tuple[float, float]] = []
+        i = math.floor(x)
+        last = None
+        while x < stop - 1e-12:
+            k = i % n
+            a, b = x - i, min(1.0, stop - i)
+            if b - a > 1e-12:
+                g = segs[k]
+                piece = g.sub(a, b)
+                pts.append(piece.start)
+                bulges.append(0.0 if type(piece) is Line else math.tan(piece.sweep / 4.0))
+                if self.widths:
+                    w0, w1 = self.widths[k]
+                    widths.append((w0 + (w1 - w0) * a, w0 + (w1 - w0) * b))
+                last = piece.end
+            i += 1
+            x = float(i)
+        if last is None:
+            p = self.point_at(t0 % 1.0 if self.closed else t0)
+            return replace(self, pts=(p,), bulges=(), closed=False, widths=())
+        pts.append(last)
+        bulges.append(0.0)
+        if self.widths:
+            widths.append((widths[-1][1], widths[-1][1]))
+        return Polyline(tuple(pts), tuple(bulges), False, self.width, tuple(widths))
 
     def point_at(self, t: float) -> Vec:
         """t runs over the whole polyline: 0 at the start, 1 at the end, in proportion to the number of segments."""

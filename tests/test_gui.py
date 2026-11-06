@@ -113,6 +113,30 @@ def add(hand, *shapes, style=None):
         return [t.add(s, style) for s in shapes]
 
 
+class TestChanging:
+    def test_what_trim_would_take_out_is_shown(self, hand):
+        add(hand, line(20, 50, 180, 50), line(100, 10, 100, 140))
+        hand.s.run("TRIM")
+        hand.move(140, 50)
+        assert hand.s.doomed
+        remove = hand.w.theme.canvas["remove"]
+        assert hand.has_color_near(150, 50, remove)
+        assert not hand.has_color_near(60, 50, remove)
+        hand.click(140, 50)
+        assert line(20, 50, 100, 50) in [e.shape for e in hand.doc.entities.values()]
+        hand.enter()
+
+    def test_an_offset_is_shown_before_it_is_made(self, hand):
+        add(hand, line(20, 50, 180, 50))
+        hand.s.run("OFFSET")
+        hand.type("10").enter()
+        hand.move(100, 51)
+        assert hand.s.ghosts == [line(20, 60, 180, 60)]
+        assert hand.has_color_near(100, 60, hand.w.theme.canvas["ghost"])
+        hand.click(100, 51).enter()
+        assert len(hand.doc.entities) == 2
+
+
 class TestDrawing:
     def test_a_line_with_the_mouse(self, hand):
         hand.s.run("LINE")
@@ -554,6 +578,11 @@ class TestWindow:
         if QApplication.focusWidget() is b:
             QTest.keyClicks(b, "l")
             assert hand.s.input == "l"
+
+    def test_the_rail_has_the_everyday_changes(self, hand):
+        tips = [b.toolTip() for b in hand.w.rail.findChildren(QToolButton)]
+        for start in ("Trim (TR)", "Offset (O)", "Fillet (F)"):
+            assert any(t.startswith(start) for t in tips), start
 
     def test_the_rail_runs_commands(self, hand):
         b = hand.w.rail.findChildren(QToolButton)[1]

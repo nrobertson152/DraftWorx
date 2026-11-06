@@ -146,6 +146,27 @@ class TestCircles:
         a = Arc(Vec(0, 0), 5, 0.0, math.pi / 2)
         assert pts(intersect(a, Circle(Vec(6, 0), 5))) == [(3, 4)]
 
+    @pytest.mark.parametrize("r", [1e5, 1e7, 1e9])
+    def test_a_huge_circle_and_a_small_one(self, r):
+        # a polyline segment with a tiny bulge is an arc like this. Working from the huge one's centre lost the small one's digits: hits a hundredth off it.
+        big = Arc(Vec(0, -r), r + 1.0, math.pi / 2 - 10.0 / r, 20.0 / r)      # about 20 long, across the top
+        small = Circle(Vec(0.3, 0.2), 1.0)
+        hits = intersect(big, small)
+        assert len(hits) == 2
+        for h in hits:
+            assert h.point.distance(small.c) == pytest.approx(1.0, abs=1e-8)
+            assert h.point.distance(big.c) == pytest.approx(big.r, abs=r * 1e-14)
+
+    @pytest.mark.parametrize("r", [1e6, 1e8])
+    def test_near_the_end_of_a_nearly_straight_arc_is_not_the_end(self, r):
+        # how close counts as the same is set by where they meet, not by the huge arc's far-off centre, which once moved this to the end
+        big = Arc(Vec(0, -r), r, math.pi / 2 - 10.0 / r, 20.0 / r)       # about 20 long, across the top, ending near (-10, 0)
+        end = big.end
+        for other in (Circle(end + Vec(-1.0 + 2e-5, 0.0), 1.0), Line(end + Vec(2e-5, -1.0), end + Vec(2e-5, 1.0))):
+            hits = intersect(big, other)
+            assert len(hits) == 1 and hits[0].ta < 1.0
+            assert hits[0].point.distance(end) == pytest.approx(2e-5, rel=1e-3)
+
 
 class TestEllipses:
     e = EllipseArc(Vec(0, 0), Vec(10, 0), 0.5)

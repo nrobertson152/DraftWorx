@@ -9,7 +9,7 @@ Each stage ends with something that works and is tested on Windows and Linux in 
 | 2 | Snap and tracking engine | done |
 | 3 | Window, canvas, commands, typed input, selection and grips, layers, properties, command search, crash recovery | done |
 | 4 | DXF read and write | done |
-| 5 | Modify: trim, extend, offset, fillet, chamfer, mirror, array | |
+| 5 | Modify: trim, extend, offset, fillet, chamfer, array, break, join, explode, stretch, match | done |
 | 6 | Annotation: text, one Dimension tool, associativity, hatch, blocks with attributes | |
 | 7 | Print and PDF, sheets and templates, automatic cleanup | |
 | 8 | RevisionWorx, OpenSchematix and OpenMeridian | |
@@ -24,7 +24,8 @@ query takes under 2 ms at 100,000 entities.
 **4, DXF.** Reads R12 to 2018, ASCII and binary. An unedited entity comes back byte for byte in the tags that matter, and unknown entities and objects survive. What we write
 passes ezdxf's audit and is read correctly by at least one other independent program in CI. AutoCAD can't be run here, and that stays stated.
 
-**5, Modify.** Trim and offset produce geometry that's exactly right, by property tests: every offset point is the offset distance away, and a trim removes only the piece you pointed at.
+**5, Modify.** Trim and offset produce geometry that's exactly right, by property tests: nothing on an offset is closer than the distance, nothing that's far enough is left
+out, and a trim removes only the piece you pointed at. Offsetting a polyline of 10,000 pieces takes seconds, not minutes.
 
 **6, Annotation.** A dimension follows the geometry it's attached to, inside the same undo step. Dimensions and hatches round-trip through DXF. A block's contents can be snapped to
 exactly, including when it's been stretched.

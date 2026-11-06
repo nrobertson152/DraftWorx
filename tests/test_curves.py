@@ -426,3 +426,10 @@ def test_strategies_make_valid_geometry(a, c, l):
 
 def test_polar():
     assert polar((1, 1), 2, 0).distance((3, 1)) < 1e-12
+
+
+def test_a_polyline_with_almost_no_bulge_is_straight():
+    s = Polyline((Vec(0.0, 0.0), Vec(100.0, 0.0)), (1e-20, 0.0))
+    assert type(s.segments[0]) is Line
+    assert s.point_at(0.5) == Vec(50.0, 0.0)
+    assert type(Polyline((Vec(0.0, 0.0), Vec(100.0, 0.0)), (1e-3, 0.0)).segments[0]) is Arc

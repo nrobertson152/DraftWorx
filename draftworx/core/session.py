@@ -49,6 +49,21 @@ class Pick:
     point: Vec
     px: float
     shift: bool = False
+    swiped: bool = False        # the mouse was dragged here with the button down, rather than clicked
+
+
+@dataclass(frozen=True, slots=True)
+class Typed:
+    """What was typed at a request that takes both pointing and typing."""
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
+class Preview:
+    """What pointing here would do."""
+    ghosts: tuple = ()          # what would be added
+    doomed: tuple = ()          # what would go
+    hover: int | None = None    # the object it would happen to
 
 
 @dataclass
@@ -96,9 +111,11 @@ class GetText(Request):
 
 @dataclass
 class GetPick(Request):
-    """Point at something. `preview(point, px)` says what would happen, and returns ghosts to show."""
+    """Point at something. `preview(point, px)` says what would happen, as a list of ghosts or a Preview."""
     preview: Callable | None = None
     enter: bool = False
+    typed: bool = False         # typing is an answer too, as a Typed
+    swipe: bool = False         # dragging across things with the button down picks each of them
 
 
 @dataclass
@@ -167,6 +184,9 @@ class Session:
         self.ctrl = False
         self.snap: SnapResult | None = None
         self.ghosts: list = []
+        self.doomed: list = []
+        self.memory: dict = {}      # what the last command of its kind was told: a radius, a distance
+        self._swiping = False
         self.fields: list[Field] = []
         self.hover: int | None = None
         self.highlights: tuple[int, ...] = ()
@@ -276,6 +296,8 @@ class Session:
         self._command_name = ""
         self.input = ""
         self.ghosts = []
+        self.doomed = []
+        self._swiping = False
         self.fields = []
         self.snap = None
         self.highlights = ()
@@ -340,6 +362,8 @@ class Session:
         if self._down is not None:
             self._dragging()
         self._update()
+        if self._swiping and isinstance(self.request, GetPick) and self.request.swipe:
+            self._answer(Pick(self.cursor, self.px, shift, True))
 
     def tick(self, now: float) -> bool:
         """Time passes with the pointer still. Returns True if something picked up by pausing changed."""
@@ -360,6 +384,7 @@ class Session:
             if not req.on_release:
                 self._point_chosen()
         elif isinstance(req, GetPick):
+            self._swiping = req.swipe
             self._answer(Pick(self.cursor, self.px, shift))
         elif isinstance(req, (GetText, GetNumber)):
             pass
@@ -368,6 +393,7 @@ class Session:
 
     def release(self, x: float, y: float, px: float, now: float = 0.0, shift: bool = False, ctrl: bool = False) -> None:
         self.move(x, y, px, now, shift, ctrl)
+        self._swiping = False
         req = self.request
         if isinstance(req, GetPoint) and req.on_release:
             self._point_chosen()
@@ -503,7 +529,11 @@ class Session:
             self.hover = None
             self.snap = None
             out = req.preview(self.cursor, self.px) if req.preview is not None else None
-            self.ghosts = list(out) if out else []
+            if isinstance(out, Preview):
+                self.ghosts, self.doomed, self.hover = list(out.ghosts), list(out.doomed), out.hover
+            else:
+                self.ghosts, self.doomed = list(out) if out else [], []
+            self.fields = [Field("value", self.input, True)] if self.input else []
         elif isinstance(req, GetText):
             self.ghosts = list(req.preview(self.input)) if req.preview is not None else []
             self.fields = [Field("text", self.input, True)]
@@ -665,6 +695,8 @@ class Session:
                 self._answer(parse_number(text))
             except TypedError as exc:
                 self.message = str(exc).capitalize() + "."
+        elif isinstance(req, GetPick) and req.typed:
+            self._answer(Typed(text))
         else:
             self.message = f"{text} isn't one of the options here."
 

@@ -16,6 +16,7 @@ from PySide6.QtGui import QBrush, QColor, QFont, QFontMetricsF, QPainter, QPaint
 from ..core import color as colors
 from ..core.curves import Arc, Circle, EllipseArc, Line, Polyline, Spline
 from ..core.model import BYBLOCK_TYPE, BYLAYER_TYPE, WEIGHT_BYBLOCK, WEIGHT_BYLAYER, WEIGHT_DEFAULT, Document, Entity, Style
+from ..core.ops.reshape import inside
 from ..core.shapes import AttDef, Foreign, Insert, MText, Node, Solid, Text
 from ..core.vec import IDENTITY, Affine, BBox, bbox_union
 
@@ -216,12 +217,7 @@ class Scene:
 
     def _effective(self, style: Style, parent: Style | None) -> Style:
         """Inside a block, things on layer 0 and things marked ByBlock take after the block's copy."""
-        if parent is None:
-            return style
-        return Style(parent.layer if style.layer == "0" else style.layer,
-                     parent.color if style.color == colors.BYBLOCK else style.color,
-                     parent.linetype if style.linetype.casefold() == BYBLOCK_TYPE.casefold() else style.linetype,
-                     parent.weight if style.weight == WEIGHT_BYBLOCK else style.weight, style.ltscale)
+        return style if parent is None else inside(style, parent)
 
     def look_of(self, style: Style) -> _Look:
         doc = self.doc

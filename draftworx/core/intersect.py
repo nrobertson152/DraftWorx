@@ -157,13 +157,20 @@ def _overlap(a: Line, b: Line, ex_a: bool, ex_b: bool, la: float, eps: float) ->
     return out
 
 
+def _far(*magnitudes: float) -> float:
+    """What the digits of numbers this big can't hold, with room to spare. A nearly straight arc has its centre far from anything it meets, and how close counts
+    as the same where it meets something is set by where that is, so this is all the far-off centre adds."""
+    return sum(abs(m) for m in magnitudes) * 1e-15
+
+
 def _line_arc(line: Line, arc: Arc, ex_l: bool, ex_a: bool) -> list[Hit]:
     (ax, ay), (bx, by) = line.a, line.b
     (cx, cy), r = arc.c, arc.r
     ux, uy = bx - ax, by - ay
     L = math.hypot(ux, uy)
-    eps = tol(ax, ay, bx, by, cx + r, cy + r, cx - r, cy - r)
+    far = _far(ax, ay, bx, by, cx, cy, r)
     if L == 0.0:
+        eps = max(far, tol(ax, ay))
         d = line.a.distance(arc.c)
         if abs(d - r) <= eps:
             t = _clamp_arc(arc, arc.param_of_angle(math.atan2(ay - cy, ax - cx)), r, eps, ex_a)
@@ -176,6 +183,7 @@ def _line_arc(line: Line, arc: Arc, ex_l: bool, ex_a: bool) -> list[Hit]:
     s = wx * ux + wy * uy
     h = ux * wy - uy * wx
     ah = abs(h)
+    eps = max(far, tol(ax + ux * s, ay + uy * s))     # at the foot of the perpendicular, where they'd touch
     if ah > r + eps:
         return []
     if ah >= r - eps:
@@ -185,6 +193,7 @@ def _line_arc(line: Line, arc: Arc, ex_l: bool, ex_a: bool) -> list[Hit]:
         along = (s - off, s + off)
     out: list[Hit] = []
     for d in along:
+        eps = max(far, tol(ax + ux * d, ay + uy * d))
         tl = _clamp_line(d / L, L, eps, ex_l)
         if tl is None:
             continue
@@ -199,26 +208,35 @@ def _line_arc(line: Line, arc: Arc, ex_l: bool, ex_a: bool) -> list[Hit]:
 def _arc_arc(a: Arc, b: Arc, ex_a: bool, ex_b: bool) -> list[Hit]:
     (ax, ay), ra = a.c, a.r
     (bx, by), rb = b.c, b.r
-    eps = tol(ax + ra, ay + ra, ax - ra, ay - ra, bx + rb, by + rb, bx - rb, by - rb)
+    far = _far(ax, ay, ra, bx, by, rb)
     dx, dy = bx - ax, by - ay
     d = math.hypot(dx, dy)
-    if d <= eps:
+    if d <= max(far, tol(ax, ay, bx, by)):
+        eps = max(far, tol(ax + ra, ay + ra, ax - ra, ay - ra, bx + rb, by + rb, bx - rb, by - rb))
         if abs(ra - rb) > eps:
             return []
         return _same_circle(a, b, ex_a, ex_b, eps)
+    ux, uy = dx / d, dy / d
+    # Measured from the smaller circle's centre, the numbers left are the size of that circle, so none of its digits are lost when the other is huge beside it.
+    if ra >= rb:
+        along = ((d - ra) * (d + ra) + rb * rb) / (2.0 * d)        # from b, toward a
+        h2 = (rb - along) * (rb + along)
+        mx, my = bx - ux * along, by - uy * along
+    else:
+        along = ((d - rb) * (d + rb) + ra * ra) / (2.0 * d)        # from a, toward b
+        h2 = (ra - along) * (ra + along)
+        mx, my = ax + ux * along, ay + uy * along
+    eps = max(far, tol(mx, my))     # halfway between where they meet, which is where they'd touch
     if d > ra + rb + eps or d < abs(ra - rb) - eps:
         return []
-    ux, uy = dx / d, dy / d
-    along = (d * d + ra * ra - rb * rb) / (2.0 * d)
     if abs(d - (ra + rb)) <= eps or abs(d - abs(ra - rb)) <= eps:
-        points = [Vec(ax + ux * along, ay + uy * along)]
+        points = [Vec(mx, my)]
     else:
-        h2 = ra * ra - along * along
         h = math.sqrt(h2) if h2 > 0.0 else 0.0
-        points = [Vec(ax + ux * along - uy * h, ay + uy * along + ux * h),
-                  Vec(ax + ux * along + uy * h, ay + uy * along - ux * h)]
+        points = [Vec(mx - uy * h, my + ux * h), Vec(mx + uy * h, my - ux * h)]
     out: list[Hit] = []
     for p in points:
+        eps = max(far, tol(p[0], p[1]))
         ta = _clamp_arc(a, a.param_of_angle(math.atan2(p[1] - ay, p[0] - ax)), ra, eps, ex_a)
         if ta is None:
             continue
