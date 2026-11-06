@@ -98,10 +98,11 @@ def build(folder: str, icon: Path | None) -> Path:
     return DIST / folder
 
 
-def run(args: list, where: Path, timeout: float = 300) -> subprocess.CompletedProcess:
-    """A built program, run as someone would run it: from a folder of its own, with no Python settings, never showing a window."""
+def run(args: list, where: Path, timeout: float = 300, qt_platform: str = "offscreen") -> subprocess.CompletedProcess:
+    """A built program, run as someone would run it: from a folder of its own, with no Python settings. Its window is drawn offscreen
+    unless `qt_platform` says otherwise."""
     env = {k: v for k, v in os.environ.items() if not k.startswith("PYTHON")}
-    env["QT_QPA_PLATFORM"] = "offscreen"
+    env["QT_QPA_PLATFORM"] = qt_platform
     try:
         return subprocess.run([str(a) for a in args], cwd=where, capture_output=True, text=True, encoding="utf-8", errors="replace",
                               timeout=timeout, stdin=subprocess.DEVNULL, env=env)
@@ -138,6 +139,10 @@ def check(folder: Path) -> list[str]:
         # On Windows this one has no console, so what it prints can go nowhere. Its exit code is what says it passed.
         expect(r.returncode == 0 and ("Window:" in r.stdout or (sys.platform == "win32" and not r.stdout)),
                "`draftworx-gui --self-test` passes", r)
+        if sys.platform == "linux" and shutil.which("xvfb-run"):
+            # On an X display, Qt's platform for Linux desktops has to load, from what's in the folder and what the system has.
+            r = run(["xvfb-run", "--auto-servernum", command, "--self-test"], here, qt_platform="xcb")
+            expect(r.returncode == 0 and "Window:" in r.stdout, "`draftworx --self-test` passes on an X display (Xvfb), window included", r)
 
         def answer(*args) -> tuple[dict, subprocess.CompletedProcess]:
             r = run([command, *args], here)

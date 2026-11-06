@@ -36,17 +36,21 @@ jobs:
       QT_QPA_PLATFORM: offscreen
       PYTHONIOENCODING: utf-8
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}      # a pull request's own commit, not a merge of it
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
-      - name: Install Qt's system libraries (Linux)
+      # Every library Qt's X11 platform needs has to be here to go into the package, for desktops that don't have them all.
+      # Xvfb is a display to check the window on.
+      - name: Install Qt's system libraries, and Xvfb (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq libegl1 libgl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0
+          sudo apt-get install -y -qq libegl1 libgl1 libopengl0 libxkbcommon-x11-0 xvfb xauth \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 \
+            libxcb-shm0 libxcb-sync1 libxcb-util1 libxcb-xfixes0 libxcb-xkb1
       - name: Install DraftWorx and PyInstaller
         run: python -m pip install -e ".[dev]"
       - name: Build, check and pack
