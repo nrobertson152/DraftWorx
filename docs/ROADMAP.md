@@ -12,7 +12,7 @@ Each stage ends with something that works and is tested on Windows and Linux in 
 | 5 | Modify: trim, extend, offset, fillet, chamfer, array, break, join, explode, stretch, match | done |
 | 6 | Annotation: text, one Dimension tool, associativity, hatch, blocks with attributes | done |
 | 7 | Print and PDF, sheets and templates, automatic cleanup | done |
-| 8 | RevisionWorx, OpenSchematix and OpenMeridian | |
+| 8 | RevisionWorx, OpenSchematix and OpenMeridian | done |
 
 ## What each stage has to prove
 

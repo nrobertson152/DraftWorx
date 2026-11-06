@@ -33,7 +33,7 @@ draftworx/
     sheets, printing, pdf       the sheet and its border, what a sheet prints, and a PDF of it with no Qt
     cleanup                     what's drawn twice, has no size, overlaps, or is named and unused
   gui/             PySide6. Thin: it forwards events and paints what the core says.
-  integrations/    RevisionWorx, OpenSchematix, OpenMeridian, through their files and command lines
+  integrations/    the family's programs, only through their files and command lines: revisionworx (status, check-out, check-in, BOMs)
   cli              `draftworx`, one JSON object per command for other programs
 ```
 
@@ -115,22 +115,6 @@ either. A border and title block is an ordinary block, placed at the scale, with
 types, so their dashes keep their size on paper. A drawing printed without a sheet is given one first, round what's drawn at the largest standard scale that fits, as its
 own undo step, and the program says what it chose.
 
-### ADR-15: One walk of the drawing prints it, for a PDF and for a printer
-
-`printing.py` turns a sheet into strokes, fills, dots and text in millimetres on the paper, through one transform, and hands them to a page. The PDF writer (`pdf.py`,
-standard library only) and the window's printer (`gui/printing.py`, Qt) are two pages, so what they print can't differ, and the PDF, which is what's tested, stands for
-both. The PDF's numbers are points to a ten-thousandth, so a length on paper is the drawing's divided by its scale to within 36 nanometres; it has no date in it, so the
-same drawing gives the same file.
-
-*Challenged:* printing through Qt for PDFs too (QPdfWriter). It needs Qt for `draftworx pdf`, and its output can't be checked by arithmetic. *Given up:* fonts: text is
-Helvetica, which every PDF reader has and which text is measured with (ADR-10); a character it can't show prints as ? and is counted.
-
-### ADR-16: Cleanup works out everything first, and changes it in one Transaction
-
-`cleanup.plan` decides what goes, what's joined and which names are unused, without changing anything, so the command can show it; `cleanup.apply` makes exactly those
-changes in one Transaction, so one undo puts all of it back. Joined lines keep ends that were really there, never a worked-out point. A name from a DXF that the file's other
-parts name or point at by handle stays, because writing it back without it would leave the file pointing at nothing.
-
 ### ADR-6: `.draftworx` is the home format, and DXF is a working format
 
 New drawings save as `.draftworx`: UTF-8 JSON, one object per line, the same bytes on every computer, so a text diff shows what changed. Writing it is simple enough to
@@ -193,6 +177,40 @@ Clicking inside an area cuts the curves near the click where they meet, and walk
 A hatch is its loops and its pattern. The pattern's lines are worked out from them each time, like a dimension's, and end exactly on curved edges. When the objects round it change, it becomes the area they now make that's bounded by most nearly the same objects, inside the same Transaction as the change (ADR-13), so it follows a stretch and a move, holes included.
 
 *Challenged:* following the point it was made from, as the first version did. A boundary moved away from that point loses it, and moving a hole changes nothing a point can see. *Challenged:* AutoCAD's associativity, which records which objects make which loop. It's more exact about a loop made of part of an object, and is a second record to keep right on every change, undo and file trip.
+
+### ADR-15: One walk of the drawing prints it, for a PDF and for a printer
+
+`printing.py` turns a sheet into strokes, fills, dots and text in millimetres on the paper, through one transform, and hands them to a page. The PDF writer (`pdf.py`,
+standard library only) and the window's printer (`gui/printing.py`, Qt) are two pages, so what they print can't differ, and the PDF, which is what's tested, stands for
+both. The PDF's numbers are points to a ten-thousandth, so a length on paper is the drawing's divided by its scale to within 36 nanometres; it has no date in it, so the
+same drawing gives the same file.
+
+*Challenged:* printing through Qt for PDFs too (QPdfWriter). It needs Qt for `draftworx pdf`, and its output can't be checked by arithmetic. *Given up:* fonts: text is
+Helvetica, which every PDF reader has and which text is measured with (ADR-10); a character it can't show prints as ? and is counted.
+
+### ADR-16: Cleanup works out everything first, and changes it in one Transaction
+
+`cleanup.plan` decides what goes, what's joined and which names are unused, without changing anything, so the command can show it; `cleanup.apply` makes exactly those
+changes in one Transaction, so one undo puts all of it back. Joined lines keep ends that were really there, never a worked-out point. A name from a DXF that the file's other
+parts name or point at by handle stays, because writing it back without it would leave the file pointing at nothing.
+
+### ADR-17: RevisionWorx through its command line: one sentence and one next step
+
+DraftWorx asks `revisionworx link` (its documented interface, one JSON object a call) what a drawing is, and checks drawings in and
+puts them into projects with it. Checking out and undoing that aren't in `link`, so they use `revisionworx --json doc checkout|cancel`, as
+FluidWorx does. Nothing imports RevisionWorx, and nothing reads a workspace, so its locks and rules are the only ones there are.
+
+The window shows RevisionWorx's own sentence for the drawing and one button for the next step, as RevisionWorx's document panel does:
+Check out when it's available, Check in when it's yours or changed. Asking happens away from the window's thread, so a slow shared folder
+can't stall drawing, and the questions are numbered, so an answer that arrives after a newer one was asked for is dropped. A check-in saves
+first, and the parts list, if asked, goes as a BOM document beside the drawing, which is how it reaches OpenMeridian.
+
+The one rule DraftWorx adds is about losing work: a file someone else has checked out is their working file, so it isn't saved over.
+Everything else (saving without a check-out, checking in) RevisionWorx already handles and records.
+
+*Challenged:* checking out automatically on the first change, as some PDM add-ins do. It leaves checkouts behind from drawings that were
+only looked at, and says nothing a button can't. *Challenged:* making the file read-only until it's checked out. RevisionWorx doesn't, and
+a drawing opened for a quick measurement would refuse to let you draw a construction line.
 
 ## What's measured, and what it should stay under
 

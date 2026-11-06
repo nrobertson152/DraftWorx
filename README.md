@@ -31,10 +31,15 @@ Type `L` and Enter to draw a line. Type a length and Enter. Pause on a corner to
 - [The `draftworx` command, for other programs](docs/COMMAND_LINE.md)
 - [Known limitations](docs/KNOWN_LIMITATIONS.md)
 
-## Part of a family
+## Works with the family
 
-[RevisionWorx](https://github.com/nrobertson152/RevisionWorx) for revision control, [OpenSchematix](https://github.com/nrobertson152/OpenSchematix) for schematics,
-[OpenMeridian](https://github.com/nrobertson152/OpenMeridian) for items and BOMs. DraftWorx reaches them through their documented files and command lines, and works without them.
+| Program | What DraftWorx does with it |
+|---|---|
+| **[RevisionWorx](https://github.com/nrobertson152/RevisionWorx)** | The status strip says what RevisionWorx says about the drawing, in its words ("DWG-1 rev B · Released · checked out by you"), with the one next step as a button: *Check out* or *Check in…*. Checking in saves first, and can take the drawing's parts list along as a BOM next to it. *File ▸ RevisionWorx* also undoes a check-out (keeping the file or putting the revision back) and puts a drawing that isn't controlled yet into a project. A drawing someone else has checked out isn't saved over. |
+| **[OpenMeridian](https://github.com/nrobertson152/OpenMeridian)** | The parts list that blocks with part numbers make reaches it through RevisionWorx: checked in as a BOM, released there, and imported by OpenMeridian like any released BOM. |
+| **[OpenSchematix](https://github.com/nrobertson152/OpenSchematix)** | DXF both ways: what it exports opens here, and what's saved here, R12 or later, opens there. |
+
+None of them is needed to run DraftWorx. It reaches them only through their documented files and command lines, and finds RevisionWorx on the `PATH` (or set `REVISIONWORX_CLI` to its `revisionworx` program). Without it, nothing about it shows.
 
 ## Development
 
