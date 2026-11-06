@@ -143,7 +143,7 @@ can differ slightly from a program with a different font. SHX fonts aren't read.
 | At 100,000 lines | Target |
 |---|---|
 | An index query near the cursor | under 2 ms (measured 0.03 ms) |
-| A snap query at the cursor | under 2 ms |
+| A snap query at the cursor | under 2 ms (measured 0.4 ms at drawing scale, 0.07 ms zoomed in, 6.5 ms with thousands under the aperture) |
 | Read a `.draftworx` | under 3 s (measured 1.8 s) |
 | Write a `.draftworx` | under 5 s (measured 0.6 s) |
 

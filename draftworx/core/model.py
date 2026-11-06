@@ -193,6 +193,8 @@ class NameTable:
 # Each curve is indexed on its own, so a polyline with a thousand segments costs a thousand small boxes, not one big one.
 _SUB = 1 << 24
 CENTRE_SUB = _SUB - 1       # the point a curve has away from itself: the centre of an arc, an insertion point
+ARC_SUB = 1 << 23           # ARC_SUB + i: the centre of a polyline's arc segment i, which may be far from the arc
+MOST_SEGMENTS = ARC_SUB - 1
 
 
 def index_key(entity_id: int, sub: int = 0) -> int:
@@ -201,6 +203,21 @@ def index_key(entity_id: int, sub: int = 0) -> int:
 
 def split_key(key: int) -> tuple[int, int]:
     return key // _SUB, key % _SUB
+
+
+def polyline_entries(s: Polyline) -> list[tuple[int, BBox]]:
+    """What the index holds for a polyline: each segment, the centre of each arc segment, and the centre of a closed one."""
+    segs = s.segments
+    out: list[tuple[int, BBox]] = [(i, seg.bbox()) for i, seg in enumerate(segs)] if segs else [(0, s.bbox())]
+    if s.bulges:
+        for i, seg in enumerate(segs):
+            if type(seg) is Arc:
+                out.append((ARC_SUB + i, (seg.c[0], seg.c[1], seg.c[0], seg.c[1])))
+    if s.closed and (len(s.pts) > 2 or s.bulges):
+        c = s.centroid()
+        if c is not None:
+            out.append((CENTRE_SUB, (c[0], c[1], c[0], c[1])))
+    return out
 
 
 @dataclass(frozen=True, slots=True)
@@ -507,7 +524,25 @@ class Document:
                     if new.locked:
                         self._locked_layers.add(key)
             elif table == "block":
-                self._block_bbox.pop(key, None)
+                self._block_changed(key)
+
+    def _block_changed(self, key: str) -> None:
+        """A block's size changed, so everything placing it, directly or inside another block, is now somewhere else."""
+        affected = {key}
+        grew = True
+        while grew:
+            grew = False
+            for k, b in self.blocks._d.items():
+                if k not in affected and any(type(e.shape) is Insert and e.shape.block.casefold() in affected for e in b.entities):
+                    affected.add(k)
+                    grew = True
+        for k in affected:
+            self._block_bbox.pop(k, None)
+        for e in self.entities.values():
+            if type(e.shape) is Insert and e.shape.block.casefold() in affected:
+                box = self.insert_bbox(e.shape)
+                if box is not None:
+                    self.index.insert(index_key(e.id), box)
 
     def _index(self, e: Entity) -> None:
         s = e.shape
@@ -515,16 +550,8 @@ class Document:
         layer = e.style.layer.casefold()
         self._layer_counts[layer] = self._layer_counts.get(layer, 0) + 1
         if type(s) is Polyline:
-            segs = s.segments
-            if segs:
-                for i, seg in enumerate(segs):
-                    self.index.insert(index_key(eid, i), seg.bbox())
-            else:
-                self.index.insert(index_key(eid), s.bbox())
-            if s.closed:
-                c = s.centroid() if len(s.pts) > 2 or any(s.bulges) else None
-                if c is not None:
-                    self.index.insert(index_key(eid, CENTRE_SUB), (c[0], c[1], c[0], c[1]))
+            for sub, box in polyline_entries(s):
+                self.index.insert(index_key(eid, sub), box)
             return
         box = self.shape_bbox(s)
         if box is not None:
@@ -547,13 +574,8 @@ class Document:
         else:
             self._layer_counts.pop(layer, None)
         if type(s) is Polyline:
-            segs = s.segments
-            if segs:
-                for i in range(len(segs)):
-                    self.index.remove(index_key(eid, i))
-            else:
-                self.index.remove(index_key(eid))
-            self.index.remove(index_key(eid, CENTRE_SUB))
+            for sub, _ in polyline_entries(s):
+                self.index.remove(index_key(eid, sub))
             return
         self.index.remove(index_key(eid))
         self.index.remove(index_key(eid, CENTRE_SUB))
@@ -568,6 +590,8 @@ class Document:
     def _check_shape(self, shape: Shape, inside: str | None = None) -> None:
         if isinstance(shape, Insert) and inside is not None and self._would_cycle(shape.block, inside):
             raise EditError(f"Block {inside} can't contain {shape.block}: it would contain itself.")
+        if type(shape) is Polyline and len(shape.pts) > MOST_SEGMENTS:
+            raise EditError(f"A polyline can have at most {MOST_SEGMENTS} points.")
 
     def _would_cycle(self, block: str, target: str, seen: set | None = None) -> bool:
         seen = seen if seen is not None else set()

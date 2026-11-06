@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from draftworx.core.curves import Arc, Circle, Line, Polyline  # noqa: E402
 from draftworx.core.model import Document  # noqa: E402
 from draftworx.core.native import dumps, loads  # noqa: E402
+from draftworx.core.snap import SnapEngine, SnapQuery  # noqa: E402
 from draftworx.core.vec import Vec  # noqa: E402
 
 
@@ -71,6 +72,16 @@ def main() -> int:
             doc.index.query((x - 50.0, y - 50.0, x + 50.0, y + 50.0))
     t, _ = timed(queries)
     results.append(("index query near the cursor", t / len(points), 0.002))
+    engine = SnapEngine(doc)
+    snaps = [SnapQuery(Vec(x, y), 25.0, last=Vec(x - 5000.0, y)) for x, y in points[:500]]
+    t, _ = timed(lambda: [engine.pick(q) for q in snaps])
+    results.append(("snap: a move at drawing scale", t / len(snaps), 0.005))
+    close = [SnapQuery(Vec(x, y), 0.5, last=Vec(x - 100.0, y)) for x, y in points[:500]]
+    t, _ = timed(lambda: [engine.pick(q) for q in close])
+    results.append(("snap: a move zoomed in", t / len(close), 0.005))
+    wide = [SnapQuery(Vec(x, y), 400.0, last=Vec(x - 5000.0, y)) for x, y in points[:100]]
+    t, _ = timed(lambda: [engine.pick(q) for q in wide])
+    results.append(("snap: a move zoomed right out", t / len(wide), 0.05))
     t, data = timed(lambda: dumps(doc))
     results.append((f"write a file ({len(data) / 1e6:.1f} MB)", t, 20.0 * k))
     t, back = timed(lambda: loads(data))

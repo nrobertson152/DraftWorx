@@ -12,7 +12,7 @@ from typing import Any
 
 from . import color as colors
 from .curves import Arc, Circle, EllipseArc, Line, Polyline, Spline
-from .model import BlockDef, DimStyle, Document, Entity, Layer, Linetype, Settings, Style, TextStyle
+from .model import MOST_SEGMENTS, BlockDef, DimStyle, Document, Entity, Layer, Linetype, Settings, Style, TextStyle
 from .shapes import AttDef, Attrib, Insert, MText, Node, Solid, Text
 from .vec import TAU, Vec
 
@@ -375,6 +375,8 @@ def decode_shape(d: dict, ctx: str):
                 raise FormatError(f"{ctx}: widths should be a list of pairs.")
             pairs = tuple((float(_num({"w": w[0]}, "w", ctx)), float(_num({"w": w[1]}, "w", ctx))) for w in widths)
             pts = _points(d, "pts", ctx, 1)
+            if len(pts) > MOST_SEGMENTS:
+                raise FormatError(f"{ctx}: a polyline can have at most {MOST_SEGMENTS} points.")
             bulges = _floats(d, "bulges", ctx)
             return Polyline(pts, bulges, _bool(d, "closed", ctx), _num(d, "width", ctx, 0.0), pairs)
         if t == "spline":

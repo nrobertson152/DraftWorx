@@ -205,6 +205,15 @@ class TestIndex:
         d, (a,) = doc_with(arc)
         assert d.index.query((-1, -1, 1, 1)) == [index_key(a, CENTRE_SUB)]
 
+    def test_centre_of_a_polyline_arc_is_findable_and_goes_with_it(self):
+        p = Polyline((Vec(0, 0), Vec(100, 0)), (0.2, 0.0))
+        c = p.segments[0].c
+        d, (a,) = doc_with(p)
+        assert d.index.query((c[0] - 1, c[1] - 1, c[0] + 1, c[1] + 1))
+        with d.transaction("x") as t:
+            t.remove(a)
+        assert len(d.index) == 0
+
     def test_closed_polyline_centre_is_findable(self):
         p = Polyline((Vec(0, 0), Vec(100, 0), Vec(100, 100), Vec(0, 100)), closed=True)
         d, (a,) = doc_with(p)
@@ -311,6 +320,20 @@ class TestBlocks:
             t.add(Insert("B", Vec(0, 0)))
         with d.transaction("y") as t, pytest.raises(EditError, match="1 time"):
             t.remove_block("B")
+
+    def test_placed_copies_are_found_where_a_changed_block_now_reaches(self):
+        d = Document()
+        with d.transaction("x") as t:
+            t.put_block(BlockDef("B", entities=(Entity(100, line(0, 0, 10, 0)),)))
+            a = t.add(Insert("B", Vec(0, 0)))
+        assert d.index.query((50, -1, 60, 1)) == []
+        with d.transaction("y") as t:
+            t.put_block(BlockDef("B", entities=(Entity(100, line(0, 0, 100, 0)),)))
+        assert d.index.query((50, -1, 60, 1)) == [index_key(a)]
+        assert d.extents() == (0, 0, 100, 0)
+        d.undo()
+        assert d.index.query((50, -1, 60, 1)) == []
+        assert d.extents() == (0, 0, 10, 0)
 
     def test_changing_a_block_changes_its_bounds(self):
         d = Document()
