@@ -13,6 +13,13 @@ Copyright © 2026 Nate Robertson. No accounts, telemetry, advertisements or feat
 
 ## Try it
 
+A build for Windows or Linux is made on request: *Run workflow* on the [Build packages](https://github.com/nrobertson152/DraftWorx/actions/workflows/packages.yml)
+page (it takes write access to the repository). About three minutes later, both are under *Artifacts* on the run's page for a day, for
+anyone signed in to GitHub. Unpack yours and run `draftworx-gui` in the folder. Nothing to install, not even Python. Windows may say it
+protected your PC, because the build isn't signed: *More info*, then *Run anyway*. These are builds to try, not releases.
+
+Or with Python 3.13:
+
 ```sh
 python -m pip install "draftworx @ git+https://github.com/nrobertson152/DraftWorx"
 draftworx-gui
