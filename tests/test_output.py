@@ -567,3 +567,13 @@ class TestCommandLine:
         empty.write_bytes(dumps(Document()))
         code, out = self.run(capsys, "pdf", str(empty), str(tmp_path / "e.pdf"))
         assert code == 2 and out["error"] == "There's nothing to print."
+
+    def test_a_pdf_carries_no_revision_code(self, capsys, tmp_path):
+        """Prints carry no QR code (ADR-18, withdrawn): which revision of a drawing applies is a unit's to say, so a code on paper
+        could only say whether it's the released one, which can be the wrong advice for a machine built to an earlier one."""
+        src = tmp_path / "plan.draftworx"
+        src.write_bytes(dumps(plan_drawing()))
+        code, out = self.run(capsys, "pdf", str(src), str(tmp_path / "plan.pdf"), "--revision-code", "DWG-1@A")
+        assert code == 2 and out["kind"] == "bad-input" and not (tmp_path / "plan.pdf").exists()
+        code, out = self.run(capsys, "pdf", str(src), str(tmp_path / "plan.pdf"))
+        assert code == 0 and "revision_code" not in out
