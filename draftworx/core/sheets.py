@@ -186,13 +186,17 @@ def _cell(out: list, x: float, y: float, w: float, h: float, tag: str, label: st
     out.append(Entity(0, AttDef(Attrib(tag, Text(Vec(x + 2.0, y + 2.5), size, ""), f"{label}?"))))
 
 
+def frame_margins(paper: str) -> tuple[float, float]:
+    """(left, elsewhere): the border's distance from the paper's edges, in millimetres, as `frame` draws it."""
+    return (20.0, 10.0) if paper.startswith("A") else (12.7, 12.7)
+
+
 def frame(paper: str, landscape: bool) -> BlockDef:
     """A border and a title block for this paper, in millimetres, its base point at the paper's lower-left corner. ISO papers have a 20 mm
     filing margin on the left and 10 mm elsewhere; the others half an inch all round. The title block is 180 mm wide (ISO 7200), at the
     bottom right, with a field for each of `FIELDS`."""
     w, h = size_of(paper, landscape)
-    iso = paper.startswith("A")
-    left, edge = (20.0, 10.0) if iso else (12.7, 12.7)
+    left, edge = frame_margins(paper)
     x1, y1 = w - edge, h - edge
     out: list[Entity] = [Entity(0, Polyline((Vec(left, edge), Vec(x1, edge), Vec(x1, y1), Vec(left, y1)), closed=True))]
     tw = 180.0 if w - left - edge >= 190.0 else w - left - edge

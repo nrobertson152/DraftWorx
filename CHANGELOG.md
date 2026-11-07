@@ -25,4 +25,9 @@
 - Where two curves cross twice closer together than can be told apart, the same point is found whichever is first.
 - RevisionWorx: the status strip says what RevisionWorx says about the drawing, with its one next step as a button (Check out, Check in…). Checking in saves first, and can take the parts list along as a BOM next to the drawing, which OpenMeridian imports once it's released. File ▸ RevisionWorx undoes a check-out and adds a drawing to a project. Someone else's checked-out file isn't saved over.
 - DXF as a working format, R12 to 2018, text and binary. A file nobody changed comes back byte for byte, and what's changed is all that changes. What can't be edited yet, such as dimensions and hatches, is shown as far as it can be, kept, and said so. Export as R12 for machines that need it.
+- Revision codes on prints: a QR code holding FieldWorx's `FWX:R:<number>@<revision>`, above the title block, so a phone with FieldWorx
+  says whether a paper copy is still the released revision. Print and Export PDF or SVG add it when RevisionWorx says the saved drawing
+  is exactly its latest revision; `draftworx pdf|svg --revision-code` adds it for other programs. It never covers the drawing: with no
+  room, the window prints without it and says so, and the command refuses. The QR encoder is FieldWorx's `fwx_label.py`, copied in
+  unchanged.
 - Standalone builds for Windows and Linux, with nothing to install: `tools/package.py`, and the Build packages workflow, which checks that every change to `main` still packages, and keeps a build for a day when one is asked for. Before a build is packed, the built program runs its self-test, window included (on Linux on an X display too), and its command line reads, converts and prints a real drawing. Qt's network module isn't in it.

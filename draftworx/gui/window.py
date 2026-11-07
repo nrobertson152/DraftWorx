@@ -576,10 +576,33 @@ class MainWindow(QMainWindow):
         from ..core.svg import svg_of
         return self._export_sheet(path, svg_of, black)
 
+    def _revision_code(self):
+        """The revision code for a print of this drawing (core.revcode), and what to say about it. There's one only when RevisionWorx says
+        the saved file is exactly the latest revision of a document it controls, nothing is changed since, and there's room for it: then
+        the print shows that revision and nothing else. A drawing RevisionWorx doesn't control gets none, and nothing is said."""
+        from ..core.revcode import RevisionCode, why_not
+        doc = self.session.doc
+        path = self.opened.path
+        if path is None or self._asker.rwx() is None:
+            return None, ""
+        with self._waiting():
+            s = self._asker.now(str(path))
+        if s is None or not s.controlled:
+            return None, ""
+        if doc.dirty or s.file_state != "unchanged" or not s.number or not s.revision:
+            what = f"{s.name} rev {s.revision}" if s.revision else s.name
+            return None, f"No revision code on it: it isn't exactly {what} as RevisionWorx has it."
+        problem = why_not(doc, sheets.sheet_of(doc))
+        if problem:
+            return None, problem
+        code = RevisionCode(s.number, s.revision)
+        return code, f"With the revision code for {code.caption}."
+
     def _export_sheet(self, path: str, make, black: bool) -> bool:
         from ..core.safefile import write_verified
         doc = self.session.doc
-        data, notes = make(doc, sheets.sheet_of(doc), black, self.opened.path.stem if self.opened.path else "")
+        code, said = self._revision_code()
+        data, notes = make(doc, sheets.sheet_of(doc), black, self.opened.path.stem if self.opened.path else "", code)
 
         def verify(back: bytes) -> None:
             if back != data:
@@ -589,7 +612,7 @@ class MainWindow(QMainWindow):
         except SaveError as exc:
             QMessageBox.warning(self, "DraftWorx", str(exc))
             return False
-        self._say(" ".join([f"Exported {Path(path).name}.", *notes]))
+        self._say(" ".join([f"Exported {Path(path).name}.", *([said] if said else []), *notes]))
         return True
 
     def print_dialog(self) -> bool:
@@ -602,13 +625,15 @@ class MainWindow(QMainWindow):
         dialog = QPrintDialog(printer, self)
         if dialog.exec() != QPrintDialog.DialogCode.Accepted:
             return False
+        code, said = self._revision_code()
         try:
-            left = print_sheet(self.session.doc, printer, printer.colorMode() == QPrinter.ColorMode.GrayScale)
+            left = print_sheet(self.session.doc, printer, printer.colorMode() == QPrinter.ColorMode.GrayScale, code)
         except (OSError, ValueError) as exc:
             QMessageBox.warning(self, "DraftWorx", str(exc))
             return False
         doc = self.session.doc
-        self._say(" ".join(["Sent to the printer."] + ([sheets.OFF_SHEET] if sheets.off_sheet(doc, sheets.sheet_of(doc)) else [])
+        self._say(" ".join(["Sent to the printer."] + ([said] if said else [])
+                           + ([sheets.OFF_SHEET] if sheets.off_sheet(doc, sheets.sheet_of(doc)) else [])
                            + (["Some blocks were placed so many times over that only part of them could be printed."] if left else [])))
         return True
 
