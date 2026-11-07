@@ -53,8 +53,9 @@ def centre_mm(found, image) -> tuple[float, float]:
 
 def test_the_encoder_is_fieldworxs_copied_unchanged():
     # FieldWorx tests fwx_label.py bit for bit against python-qrcode; this copy must be that file, so it draws the same codes.
+    # (Line endings aside: git on Windows checks text files out with CRLF.)
     assert fwx_label.FWX_LABEL_VERSION == 1
-    assert hashlib.sha256(Path(fwx_label.__file__).read_bytes()).hexdigest() == \
+    assert hashlib.sha256(Path(fwx_label.__file__).read_bytes().replace(b"\r\n", b"\n")).hexdigest() == \
         "56cffdf78cb5f0297cf17f06f8ada7a738f30a2f7e7eb6f65d671109a291c067"
 
 
