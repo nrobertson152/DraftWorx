@@ -139,12 +139,11 @@ class _Content:
         self.out.append(f"BT /F1 {_n(size)} Tf {_n(a)} {_n(b)} {_n(cc)} {_n(d)} {_n(start[0] * PT)} {_n(start[1] * PT)} Tm {_literal(data)} Tj ET")
 
 
-def pdf_of(doc: Document, sheet: Sheet, black: bool = False, title: str = "", code=None) -> tuple[bytes, list[str]]:
-    """The PDF, one page the size of the sheet's paper, and what the person should know about it. `code`: the revision code to print on
-    it (revcode.RevisionCode); CodeError if there's no room for it."""
+def pdf_of(doc: Document, sheet: Sheet, black: bool = False, title: str = "") -> tuple[bytes, list[str]]:
+    """The PDF, one page the size of the sheet's paper, and what the person should know about it."""
     content = _Content()
     content.out += ["1 j", "0 J"]
-    left_out = draw(doc, sheet, content, black, code)
+    left_out = draw(doc, sheet, content, black)
     stream = zlib.compress("\n".join(content.out).encode("latin-1"), 9)
     w, h = sheet.width * PT, sheet.height * PT
     info = f"<< /Producer {_literal(PROGRAM.encode('latin-1', 'replace'))}" + (f" /Title {_literal(_winansi(title)[0])}" if title else "") + " >>"

@@ -19,7 +19,6 @@ from draftworx.core.config import Config  # noqa: E402
 from draftworx.core.curves import Circle, Line, Polyline  # noqa: E402
 from draftworx.core.files import open_drawing  # noqa: E402
 from draftworx.core.model import BlockDef, Entity, Layer, Linetype, Style  # noqa: E402
-from draftworx.core.native import dumps  # noqa: E402
 from draftworx.core.shapes import Dimension, Hatch, Insert, Solid, Text  # noqa: E402
 from draftworx.core.vec import Vec  # noqa: E402
 from draftworx.gui import theme as themes  # noqa: E402
@@ -994,6 +993,24 @@ class TestRevisionWorx:
         with hand.w.session.doc.transaction("x") as t:
             t.add(line(0, 0, 0, 80))
 
+    def test_a_print_of_a_controlled_revision_is_the_drawing_and_nothing_more(self, hand, tmp_path):
+        """No QR code on prints (ADR-18, withdrawn): even when RevisionWorx says the file is exactly its latest revision, the PDF is
+        the one the drawing alone makes, and the window says nothing about a code."""
+        import family
+        from draftworx.core import sheets
+        from draftworx.core.pdf import pdf_of
+        doc = sheets.from_template("ISO A3 across")
+        with doc.transaction("x") as t:
+            t.add(line(100, 100, 200, 150))
+        f = family.controlled(family.workspace(tmp_path), doc)
+        assert hand.w.open_path(str(f))
+        hand.w.refresh_revision(wait=True)
+        assert hand.w.revision_status.file_state == "unchanged"
+        assert hand.w.export_pdf(str(tmp_path / "out.pdf"))
+        opened = hand.w.session.doc
+        assert (tmp_path / "out.pdf").read_bytes() == pdf_of(opened, sheets.sheet_of(opened), False, f.stem)[0]
+        assert "code" not in hand.s.message
+
     def test_it_says_what_the_drawing_is_and_offers_the_next_step(self, hand, tmp_path):
         import family
         ws = family.workspace(tmp_path)
@@ -1054,52 +1071,6 @@ class TestRevisionWorx:
         assert not hand.w.save()
         assert f.read_bytes() == before and hand.w.session.doc.dirty
         assert asked and "Saving here would overwrite the file they're working on" in asked[0]
-
-    def codes(self, path) -> list[str]:
-        zxingcpp = pytest.importorskip("zxingcpp")
-        pdfium = pytest.importorskip("pypdfium2")
-        page = pdfium.PdfDocument(str(path))[0]
-        return [r.text for r in zxingcpp.read_barcodes(page.render(scale=200 / 72, grayscale=True).to_pil())]
-
-    def test_a_print_of_a_revision_carries_its_revision_code(self, hand, tmp_path):
-        import family
-        from draftworx.core import sheets
-        doc = sheets.from_template("ISO A3 across")
-        with doc.transaction("x") as t:
-            t.add(line(100, 100, 200, 150))
-        f = family.controlled(family.workspace(tmp_path), doc)
-        assert hand.w.open_path(str(f))
-        hand.w.refresh_revision(wait=True)
-        rev = hand.w.revision_status.revision
-        assert hand.w.export_pdf(str(tmp_path / "out.pdf"))
-        assert self.codes(tmp_path / "out.pdf") == [f"FWX:R:DWG-1@{rev}"]
-        assert f"With the revision code for DWG-1 rev {rev}." in hand.s.message
-        self.change(hand)                       # not saved: what prints isn't that revision any more
-        assert hand.w.export_pdf(str(tmp_path / "changed.pdf"))
-        assert self.codes(tmp_path / "changed.pdf") == []
-        assert f"No revision code on it: it isn't exactly DWG-1 rev {rev} as RevisionWorx has it." in hand.s.message
-
-    def test_no_room_for_the_code_prints_without_it_and_says_so(self, hand, tmp_path):
-        import family
-        from draftworx.core import sheets
-        doc = sheets.from_template("ISO A3 across")
-        with doc.transaction("x") as t:
-            t.add(line(380, 60, 400, 70))       # where the code would go
-        f = family.controlled(family.workspace(tmp_path), doc)
-        assert hand.w.open_path(str(f))
-        assert hand.w.export_pdf(str(tmp_path / "out.pdf"))
-        assert self.codes(tmp_path / "out.pdf") == []
-        assert "There's no room for the revision code: something is drawn where it goes" in hand.s.message
-
-    def test_a_drawing_it_doesnt_control_prints_as_before(self, hand, tmp_path):
-        import family
-        from draftworx.core import sheets
-        family.workspace(tmp_path)
-        f = tmp_path / "loose.draftworx"
-        f.write_bytes(dumps(sheets.from_template("ISO A3 across")))
-        assert hand.w.open_path(str(f))
-        assert hand.w.export_pdf(str(tmp_path / "out.pdf"))
-        assert self.codes(tmp_path / "out.pdf") == [] and "revision code" not in hand.s.message
 
     def test_undo_check_out_can_put_the_revision_back(self, hand, tmp_path):
         import family

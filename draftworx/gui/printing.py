@@ -82,17 +82,11 @@ def page_layout(sheet: sheets.Sheet) -> QPageLayout:
     return QPageLayout(size, orientation, QMarginsF(0, 0, 0, 0), QPageLayout.Unit.Millimeter)
 
 
-def print_sheet(doc: Document, printer: QPrinter, black: bool = False, code=None) -> int:
-    """Print the drawing's sheet on this printer, to scale, with the revision code `code` (core.revcode) if given. Returns how many objects
-    were left out because there was too much to draw. Nothing goes to the printer if the code has no room (CodeError)."""
+def print_sheet(doc: Document, printer: QPrinter, black: bool = False) -> int:
+    """Print the drawing's sheet on this printer, to scale. Returns how many objects were left out because there was too much to draw."""
     sheet = sheets.sheet_of(doc)
     if sheet is None:
         raise ValueError("The drawing has no sheet yet.")
-    if code is not None:
-        from ..core.revcode import CodeError, why_not
-        problem = why_not(doc, sheet)
-        if problem:
-            raise CodeError(problem)
     printer.setFullPage(True)
     printer.setPageLayout(page_layout(sheet))
     painter = QPainter()
@@ -104,6 +98,6 @@ def print_sheet(doc: Document, printer: QPrinter, black: bool = False, code=None
         page = printer.pageLayout().fullRectPixels(printer.resolution())
         # millimetres up from the paper's lower-left corner, to the printer's pixels down from its top
         painter.setTransform(QTransform(k, 0.0, 0.0, -k, page.x(), page.y() + sheet.height * k))
-        return draw(doc, sheet, _QtPage(painter, doc), black, code)
+        return draw(doc, sheet, _QtPage(painter, doc), black)
     finally:
         painter.end()

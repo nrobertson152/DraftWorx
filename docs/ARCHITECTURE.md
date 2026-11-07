@@ -212,22 +212,13 @@ Everything else (saving without a check-out, checking in) RevisionWorx already h
 only looked at, and says nothing a button can't. *Challenged:* making the file read-only until it's checked out. RevisionWorx doesn't, and
 a drawing opened for a quick measurement would refuse to let you draw a construction line.
 
-### ADR-18: Revision codes on prints, with FieldWorx's QR encoder copied in unchanged
+### ADR-18: No codes on prints (withdrawn 2026-11-07)
 
-A print of a controlled revision carries FieldWorx's revision label, `FWX:R:<number>@<revision>`, as a QR code, so a phone can tell
-whether a paper copy is still current (FieldWorx `docs/PROTOCOL.md` section 7). The window adds it only when RevisionWorx says, at the
-moment of printing, that the saved file is exactly the drawing's latest revision and nothing is changed since: a code never names a
-revision the paper doesn't show. It has one place, above the right end of the title block, and is only drawn where nothing printed is,
-so it can't hide part of the drawing. It's drawn by the same walk as everything else (ADR-15), so the PDF, the SVG and the printer agree.
-
-The QR code comes from `core/fwx_label.py`, FieldWorx's encoder, copied in unchanged, as integrations copy RevisionWorx's
-`rwx_client.py`. That isn't the shared library ADR-7 turns down: the copy is a frozen file with a version line, it changes only when
-FieldWorx's labels do, and a test checks it's byte for byte the file FieldWorx tests against an independent encoder. Every program in the
-family then draws the same code for the same revision.
-
-*Challenged:* a field for the code in the title block. It would change the block every drawing already has; a place beside it needs
-nothing changed. *Challenged:* a white box under the code so it can go anywhere. A print that hides part of a drawing is wrong
-without saying so.
+For a day, a print of a controlled revision carried FieldWorx's revision label (`FWX:R:<number>@<revision>`) as a QR code, so a phone
+could say whether a paper copy was still the released revision. The Director pointed out that codes belong on machines and projects: a
+machine's serial says which revision of each drawing applies to it, and a drawing can't know which machine it's being used on. Asked
+about a print of rev B, the phone could only answer "rev C is released: work to that", which is the wrong advice for a machine built to
+rev B. So prints carry the drawing and nothing else, and FieldWorx prints labels for units, projects and parts only.
 
 ## What's measured, and what it should stay under
 
