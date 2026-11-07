@@ -98,10 +98,11 @@ class _Content:
                         f'fill="{_rgb(rgb)}">{escape(t.text)}</text>')
 
 
-def svg_of(doc: Document, sheet: Sheet, black: bool = False, title: str = "") -> tuple[bytes, list[str]]:
-    """The SVG, the size of the sheet's paper, and what the person should know about it."""
+def svg_of(doc: Document, sheet: Sheet, black: bool = False, title: str = "", code=None) -> tuple[bytes, list[str]]:
+    """The SVG, the size of the sheet's paper, and what the person should know about it. `code`: the revision code to draw on it
+    (revcode.RevisionCode); CodeError if there's no room for it."""
     content = _Content()
-    left_out = draw(doc, sheet, content, black)
+    left_out = draw(doc, sheet, content, black, code)
     w, h = sheet.width, sheet.height
     head = [
         '<?xml version="1.0" encoding="UTF-8"?>',

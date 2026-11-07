@@ -289,9 +289,17 @@ def mtext_lines(t: MText) -> list[Text]:
     return out
 
 
-def draw(doc: Document, sheet: Sheet, page: Page, black: bool = False) -> int:
+def draw(doc: Document, sheet: Sheet, page: Page, black: bool = False, code=None) -> int:
     """Draw everything on the sheet onto the page. Solid fills first, so they never hide what's over them. Returns how many objects were
-    left out because the drawing describes more than can be drawn (blocks in blocks in arrays)."""
+    left out because the drawing describes more than can be drawn (blocks in blocks in arrays).
+
+    `code`, a revcode.RevisionCode, adds the revision's QR code where revcode.area says, which has to be clear: if anything is drawn
+    there, CodeError, before anything is drawn."""
+    if code is not None:
+        from .revcode import CodeError, why_not
+        problem = why_not(doc, sheet)
+        if problem:
+            raise CodeError(problem)
     w = _Walk(doc, page, sheet, black)
     found: set[int] = set()
     for key in doc.index.query(sheet.box()):
@@ -303,6 +311,9 @@ def draw(doc: Document, sheet: Sheet, page: Page, black: bool = False) -> int:
     for e in chosen:
         if not (type(e.shape) is Hatch and e.shape.solid):
             w.shape(e.shape, e.style, None, w.to_paper, 0)
+    if code is not None:
+        from .revcode import draw_code
+        draw_code(page, code, doc, sheet)
     return max(0, -w.left)
 
 

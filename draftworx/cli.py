@@ -190,11 +190,18 @@ def _sheet_file(args, suffix: str, make) -> dict:
 
     from .core import sheets
     from .core.safefile import SaveError, write_verified
+    from .core.revcode import CodeError, RevisionCode, why_not
     opened = _open(args.drawing)
     doc = opened.doc
     target = _Path(args.output)
     if target.suffix.casefold() != suffix:
         raise _Refused(f"The new file's name has to end in {suffix}.")
+    code = None
+    if args.revision_code is not None:
+        try:
+            code = RevisionCode.parse(args.revision_code)
+        except CodeError as exc:
+            raise _Refused(str(exc)) from exc
     if target.exists() and not args.overwrite:
         raise _Refused(f"{target.name} is already there. Add --overwrite to replace it.", "exists")
     if args.upright and args.across:
@@ -218,7 +225,9 @@ def _sheet_file(args, suffix: str, make) -> dict:
         with doc.transaction("Sheet") as t:
             sheets.apply(t, sheets.fitted(doc, paper, landscape, n))
     sheet = sheets.sheet_of(doc)
-    data, notes = make(doc, sheet, args.black, target.stem)
+    if code is not None and why_not(doc, sheet):
+        raise _Refused(why_not(doc, sheet))
+    data, notes = make(doc, sheet, args.black, target.stem, code)
 
     def verify(back: bytes) -> None:
         if back != data:
@@ -228,7 +237,8 @@ def _sheet_file(args, suffix: str, make) -> dict:
     except SaveError as exc:
         raise _Refused(str(exc), "error") from exc
     return {"ok": True, "path": str(target), "paper": sheet.paper, "landscape": sheet.width > sheet.height,
-            "scale": sheets.scale_words(doc.settings.annotation_scale), "sheet": list(sheet.box()), "notes": notes}
+            "scale": sheets.scale_words(doc.settings.annotation_scale), "sheet": list(sheet.box()), "notes": notes,
+            "revision_code": code.text if code is not None else ""}
 
 
 COMMANDS = {
@@ -259,6 +269,8 @@ def run_command(argv: list[str]) -> int:
         parser.add_argument("--across", action="store_true", help="the paper across, as it is unless the drawing's own sheet is upright")
         parser.add_argument("--scale", help="like 1:50, or 2:1; the largest that fits if not given")
         parser.add_argument("--black", action="store_true", help="everything in black, as most drawings are printed")
+        parser.add_argument("--revision-code", metavar="NUMBER@REVISION",
+                            help="print the revision's QR code (FieldWorx FWX:R:) above the title block's right end, like DWG-1@B")
         parser.add_argument("--overwrite", action="store_true")
     if name == "convert":
         parser.add_argument("output")

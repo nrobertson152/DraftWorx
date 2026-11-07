@@ -55,6 +55,12 @@ This is early. You can draw lines, polylines, rectangles, circles, arcs, ellipse
 - A PDF is one page of vectors and searchable text. It has no layers, links or bookmarks.
 - An SVG is the same sheet, in millimetres, with real text, for Inkscape, browsers, word processors and laser cutters' software. Its objects aren't grouped by layer, and its text is set in Helvetica, or Arial or another sans-serif where that isn't installed, so it can come out a little wider or narrower than in DraftWorx. Hatch patterns are their lines, as printed.
 - The same drawing gives the same PDF on the same computer. Another computer's zlib may compress it to different bytes that draw the same.
+- A print's revision code (FieldWorx's `FWX:R:`) has one place, above the right end of the title block, and needs 20 x 23.5 mm clear
+  there. Where something is drawn, the window prints without it and says so, and `draftworx pdf` refuses. The place assumes DraftWorx's
+  own title block, 40 mm high; a taller one of your own leaves no room, which is found and said the same way.
+- The window puts it on only when RevisionWorx says the saved file is exactly the drawing's latest revision and nothing has changed
+  since, so a print with a code always shows that revision. A drawing that needed a sheet fitted to print it has changed, so it prints
+  without one. `draftworx pdf --revision-code` trusts the revision it's given.
 - There's one border and title block design, about ISO 7200's, filled in like any block's fields. To use your own, make a block with the name the program gives its own (`Sheet A3 across`), drawn in millimetres from the paper's lower-left corner, and the program uses yours.
 - Templates come with a fixed set of layers and line types. A drawing of your own can be used as a template by saving a copy of it.
 
@@ -115,3 +121,5 @@ What's kept, what's shown and what isn't are in `DXF.md`. The short version: not
 - Native Windows use by hand. CI runs on Windows, offscreen. The Windows build's self-test runs there too, window included.
 - The Linux build on other distributions than Ubuntu.
 - AutoCAD reading files written here: it can't be run in CI. ezdxf, GDAL and LibreCAD do read them.
+- Revision codes scanned off paper by phones. Tests read them from rendered pages with zxing-cpp, the decoder FieldWorx's app uses; no
+  printed drawing has been scanned.
