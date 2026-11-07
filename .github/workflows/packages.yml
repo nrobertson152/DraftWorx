@@ -1,8 +1,10 @@
 name: Build packages
 
-# A standalone DraftWorx for Windows and Linux, to download from the run's page and try: unpack it and run draftworx-gui. Nothing to
-# install, not even Python. tools/package.py builds it, checks the built program and packs it. These are builds to try, not
-# releases: releases and version tags are the Director's (AGENTS.md), so nothing here publishes one.
+# A standalone DraftWorx for Windows and Linux: unpack it and run draftworx-gui, with nothing to install, not even Python.
+# tools/package.py builds it, checks the built program and packs it, for every change to main and for pull requests that change
+# packaging, so it keeps working. To get one to try, choose Run workflow on the Actions tab: only then is the package kept, for a
+# day, because artifacts use the account's 500 MB of storage, which every repository shares.
+# These are builds to try. Releases and version tags are the Director's (AGENTS.md), so nothing here publishes one.
 
 on:
   push:
@@ -56,10 +58,11 @@ jobs:
       - name: Build, check and pack
         id: package
         run: python tools/package.py
-      - name: Keep the package
+      - name: Keep the package for a day
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v7
         with:
           path: ${{ steps.package.outputs.archive }}
           archive: false
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 1

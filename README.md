@@ -13,10 +13,10 @@ Copyright © 2026 Nate Robertson. No accounts, telemetry, advertisements or feat
 
 ## Try it
 
-Download a build for Windows or Linux from the latest [Build packages](https://github.com/nrobertson152/DraftWorx/actions/workflows/packages.yml?query=branch%3Amain)
-run on `main`: it's under *Artifacts* on the run's page, for anyone signed in to GitHub. Unpack it and run `draftworx-gui` in the
-folder. Nothing to install, not even Python. Windows may say it protected your PC, because the build isn't signed: *More info*, then
-*Run anyway*. These are builds to try, not releases.
+A build for Windows or Linux is made on request: *Run workflow* on the [Build packages](https://github.com/nrobertson152/DraftWorx/actions/workflows/packages.yml)
+page (it takes write access to the repository). About three minutes later, both are under *Artifacts* on the run's page for a day, for
+anyone signed in to GitHub. Unpack yours and run `draftworx-gui` in the folder. Nothing to install, not even Python. Windows may say it
+protected your PC, because the build isn't signed: *More info*, then *Run anyway*. These are builds to try, not releases.
 
 Or with Python 3.13:
 

@@ -106,7 +106,8 @@ What's kept, what's shown and what isn't are in `DXF.md`. The short version: not
 
 - They aren't signed, so Windows may say it protected your PC the first time one runs: *More info*, then *Run anyway*.
 - The Linux build is made on Ubuntu 22.04 and brings the libraries it uses with it, so it needs a Linux at least that new.
-- They're builds to try, kept for 30 days on each run's page. They aren't releases.
+- They're builds to try, made when someone asks (Run workflow) and kept for a day, because artifacts use the account's shared 500 MB
+  of storage. They aren't releases.
 
 ## Not verified
 
