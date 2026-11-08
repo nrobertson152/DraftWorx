@@ -25,6 +25,8 @@ PAPERS: dict[str, tuple[float, float]] = {
     "ANSI C": (431.8, 558.8), "ANSI D": (558.8, 863.6), "ANSI E": (863.6, 1117.6),
 }
 _ALIASES = {"ANSI A": "Letter", "ANSI B": "Tabloid", "LEDGER": "Tabloid", "C": "ANSI C", "D": "ANSI D", "E": "ANSI E"}
+#: the ISO 216 papers, whose borders follow ISO 5457
+ISO_PAPERS = ("A4", "A3", "A2", "A1", "A0")
 #: 1:n, as ISO 5455 and architects use them; below 1 is an enlargement (0.5 is 2:1)
 METRIC = (0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 1250, 2000, 2500, 5000, 10000)
 #: 1:n for drawings in inches and feet: 1/4" = 1'-0" is 1:48
@@ -187,12 +189,13 @@ def _cell(out: list, x: float, y: float, w: float, h: float, tag: str, label: st
 
 
 def frame(paper: str, landscape: bool) -> BlockDef:
-    """A border and a title block for this paper, in millimetres, its base point at the paper's lower-left corner. ISO papers have a 20 mm
-    filing margin on the left and 10 mm elsewhere; the others half an inch all round. The title block is 180 mm wide (ISO 7200), at the
-    bottom right, with a field for each of `FIELDS`."""
+    """A border and a title block for this paper, in millimetres, its base point at the paper's lower-left corner. ISO papers (A0 to A4)
+    have a 20 mm filing margin on the left and 10 mm elsewhere; the others (Letter, Legal, Tabloid and ANSI C, D and E) half an inch all
+    round. The title block is 180 mm wide (ISO 7200), at the bottom right, with a field for each of `FIELDS`.
+
+    A drawing keeps the border stored in it: one made before ANSI papers had their half inch (issue #14) prints as it did."""
     w, h = size_of(paper, landscape)
-    iso = paper.startswith("A")
-    left, edge = (20.0, 10.0) if iso else (12.7, 12.7)
+    left, edge = (20.0, 10.0) if paper in ISO_PAPERS else (12.7, 12.7)
     x1, y1 = w - edge, h - edge
     out: list[Entity] = [Entity(0, Polyline((Vec(left, edge), Vec(x1, edge), Vec(x1, y1), Vec(left, y1)), closed=True))]
     tw = 180.0 if w - left - edge >= 190.0 else w - left - edge
@@ -297,7 +300,7 @@ def apply(t, new: Settings) -> None:
 # ------------------------------------------------------------------------------------------------------------- templates
 
 TEMPLATES: dict[str, tuple[str, bool, str]] = {}
-for _p in ("A4", "A3", "A2", "A1", "A0"):
+for _p in ISO_PAPERS:
     for _land in (True, False):
         TEMPLATES[f"ISO {_p} {'across' if _land else 'upright'}"] = (_p, _land, "mm")
 for _p in ("Letter", "Tabloid", "ANSI C", "ANSI D", "ANSI E"):
@@ -324,6 +327,6 @@ def from_template(name: str) -> Document:
     return doc
 
 
-__all__ = ["FIELDS", "FRAME_LAYER", "IMPERIAL", "METRIC", "OFF_SHEET", "PAPERS", "Sheet", "TEMPLATES", "apply", "default_paper", "drawn", "fitted", "fitting_scale", "frame",
+__all__ = ["FIELDS", "FRAME_LAYER", "IMPERIAL", "ISO_PAPERS", "METRIC", "OFF_SHEET", "PAPERS", "Sheet", "TEMPLATES", "apply", "default_paper", "drawn", "fitted", "fitting_scale", "frame",
            "first_sheet", "frame_insert", "frame_name", "frame_paper", "from_template", "off_sheet", "paper_named", "parse_scale", "per_mm", "place_frame", "scale_words", "sheet_of", "title_block",
            "size_of"]

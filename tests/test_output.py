@@ -9,6 +9,7 @@ import math
 import re
 import zlib
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -320,6 +321,30 @@ class TestTemplates:
         assert loads(dumps(doc)).fingerprint() == doc.fingerprint()
         back, _ = read_dxf(write_dxf(doc))
         assert any(type(e.shape) is Insert for e in back.entities.values())
+
+    @pytest.mark.parametrize("paper", sorted(sheets.PAPERS))
+    def test_a_border_has_iso_margins_on_iso_papers_and_half_an_inch_on_the_others(self, paper):
+        """Issue #14: ANSI C, D and E start with an A too, and had ISO's margins."""
+        w, h = sheets.size_of(paper, True)
+        pts = sheets.frame(paper, True).entities[0].shape.pts
+        xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+        want = (20.0, 10.0, 10.0, 10.0) if paper in ("A4", "A3", "A2", "A1", "A0") else (12.7, 12.7, 12.7, 12.7)
+        assert (min(xs), min(ys), w - max(xs), h - max(ys)) == pytest.approx(want, abs=1e-9)
+
+    def test_a_drawing_made_before_keeps_its_border_and_prints_as_it_did(self):
+        """A drawing made before #14 was fixed has an ANSI D border with ISO margins stored in it. Opened, rescaled, saved and printed,
+        it keeps that border; a new ANSI D drawing gets the half inch."""
+        old = (Path(__file__).parent / "data" / "ansi_d_border_before_14.draftworx").read_bytes()
+        doc = loads(old)
+        name = sheets.frame_name("ANSI D", True)
+        stored = doc.blocks.get(name)
+        assert stored.entities[0].shape.pts[0] == (20.0, 10.0)
+        with doc.transaction("x") as t:
+            sheets.apply(t, replace(doc.settings, annotation_scale=24.0))
+        assert doc.blocks.get(name) == stored and loads(dumps(doc)).blocks.get(name) == stored
+        left = min(x for path in strokes(content(pdf_of(doc, sheets.sheet_of(doc))[0])) for x, _y in path)
+        assert left == pytest.approx(20.0 * PT, abs=0.01), "the border is still 20 mm from the paper's edge"
+        assert sheets.from_template("ANSI D across").blocks.get(name).entities[0].shape.pts[0] == (12.7, 12.7)
 
     def test_imperial_line_types_are_the_same_on_paper(self):
         doc = sheets.from_template("Letter across")

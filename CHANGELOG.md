@@ -18,6 +18,8 @@
 - `draftworx version`, `info`, `parts` and `convert`, for other programs: one JSON object out, like `revisionworx link`.
 - Sheets: choose a paper and the drawing's scale (1:50, 2:1, 1/4"=1'), and where the sheet goes, with Sheet. A border and title block with fields comes with it if you want one, and goes with the sheet.
 - Templates: a new drawing on ISO A4 to A0, Letter, Tabloid or ANSI C to E, with its border, layers and line types.
+- A border on ANSI C, D or E paper has half an inch all round, as on Letter and Tabloid. It had ISO's 20 mm filing margin, because
+  the check for ISO papers was "starts with A" (#14). A drawing made before keeps the border stored in it, and prints as it did.
 - Print and Export PDF, to scale: a 1000 mm line at 1:50 is 20 mm on paper, checked by arithmetic, by another PDF reader and by measuring the printed page. A drawing printed without a sheet is given one round what's drawn. `draftworx pdf` does the same for other programs.
 - Export SVG: the sheet in millimetres, to scale, with real text, for Inkscape, browsers and laser cutters' software. `draftworx svg` for other programs.
 - Cleanup: what's drawn twice, what has no size, lines that overlap, and names nothing uses, shown first and taken out in one undo step.

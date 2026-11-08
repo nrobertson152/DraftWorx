@@ -1,0 +1,32 @@
+{"format":"DraftWorx drawing","version":4,"program":"DraftWorx (main 57b3898)","next_id":33,"settings":{"units":"in","linear_format":"decimal","linear_decimals":3,"angle_decimals":1,"annotation_scale":1.0,"ltscale":1.0,"point_mode":0,"point_size":0.0,"paper":"ANSI D","landscape":true,"sheet_at":[0.0,0.0]},"current":{"layer":"Outlines","color":256,"linetype":"ByLayer","weight":-1,"text_style":"Standard","dim_style":"Standard"},
+"layers":[
+{"name":"0","color":7,"linetype":"Continuous","weight":-3},
+{"name":"Centre lines","color":1,"linetype":"CENTER","weight":18},
+{"name":"Dimensions","color":4,"linetype":"Continuous","weight":18},
+{"name":"Hatch","color":8,"linetype":"Continuous","weight":13},
+{"name":"Hidden","color":8,"linetype":"HIDDEN","weight":25},
+{"name":"Outlines","color":7,"linetype":"Continuous","weight":50},
+{"name":"Sheet","color":7,"linetype":"Continuous","weight":35},
+{"name":"Text","color":7,"linetype":"Continuous","weight":25}
+],
+"linetypes":[
+{"name":"ByBlock","description":"","pattern":[]},
+{"name":"ByLayer","description":"","pattern":[]},
+{"name":"CENTER","description":"Centre ____ _ ____ _","pattern":[1.25,-0.24999999999999997,0.24999999999999997,-0.24999999999999997]},
+{"name":"Continuous","description":"Solid line","pattern":[]},
+{"name":"HIDDEN","description":"Hidden __ __ __","pattern":[0.24999999999999997,-0.12499999999999999]},
+{"name":"PHANTOM","description":"Phantom ____ _ _ ____","pattern":[1.25,-0.24999999999999997,0.24999999999999997,-0.24999999999999997,0.24999999999999997,-0.24999999999999997]}
+],
+"text_styles":[
+{"name":"Standard","font":"Arial","height":0.0,"width_factor":1.0,"oblique":0.0}
+],
+"dim_styles":[
+{"name":"Standard"}
+],
+"blocks":[
+{"name":"Sheet ANSI D across","base":[0.0,0.0],"entities":[{"id":1,"type":"polyline","pts":[[20.0,10.0],[853.6,10.0],[853.6,548.8],[20.0,548.8]],"closed":true},{"id":2,"type":"polyline","pts":[[673.6,40.0],[853.6,40.0],[853.6,50.0],[673.6,50.0]],"closed":true},{"id":3,"type":"text","p":[675.1,48.5],"height":1.8,"text":"Title","valign":3},{"id":4,"type":"attdef","tag":"TITLE","p":[675.6,42.5],"height":5.0,"text":"","prompt":"Title?"},{"id":5,"type":"polyline","pts":[[673.6,30.0],[763.6,30.0],[763.6,40.0],[673.6,40.0]],"closed":true},{"id":6,"type":"text","p":[675.1,38.5],"height":1.8,"text":"Company","valign":3},{"id":7,"type":"attdef","tag":"COMPANY","p":[675.6,32.5],"height":3.5,"text":"","prompt":"Company?"},{"id":8,"type":"polyline","pts":[[763.6,30.0],[853.6,30.0],[853.6,40.0],[763.6,40.0]],"closed":true},{"id":9,"type":"text","p":[765.1,38.5],"height":1.8,"text":"Project","valign":3},{"id":10,"type":"attdef","tag":"PROJECT","p":[765.6,32.5],"height":3.5,"text":"","prompt":"Project?"},{"id":11,"type":"polyline","pts":[[673.6,20.0],[763.6,20.0],[763.6,30.0],[673.6,30.0]],"closed":true},{"id":12,"type":"text","p":[675.1,28.5],"height":1.8,"text":"Drawing number","valign":3},{"id":13,"type":"attdef","tag":"DRAWING_NO","p":[675.6,22.5],"height":3.5,"text":"","prompt":"Drawing number?"},{"id":14,"type":"polyline","pts":[[763.6,20.0],[799.6,20.0],[799.6,30.0],[763.6,30.0]],"closed":true},{"id":15,"type":"text","p":[765.1,28.5],"height":1.8,"text":"Revision","valign":3},{"id":16,"type":"attdef","tag":"REV","p":[765.6,22.5],"height":3.5,"text":"","prompt":"Revision?"},{"id":17,"type":"polyline","pts":[[799.6,20.0],[853.6,20.0],[853.6,30.0],[799.6,30.0]],"closed":true},{"id":18,"type":"text","p":[801.1,28.5],"height":1.8,"text":"Sheet","valign":3},{"id":19,"type":"attdef","tag":"SHEET","p":[801.6,22.5],"height":3.5,"text":"","prompt":"Sheet?"},{"id":20,"type":"polyline","pts":[[673.6,10.0],[718.6,10.0],[718.6,20.0],[673.6,20.0]],"closed":true},{"id":21,"type":"text","p":[675.1,18.5],"height":1.8,"text":"Drawn","valign":3},{"id":22,"type":"attdef","tag":"DRAWN","p":[675.6,12.5],"height":3.5,"text":"","prompt":"Drawn?"},{"id":23,"type":"polyline","pts":[[718.6,10.0],[763.6,10.0],[763.6,20.0],[718.6,20.0]],"closed":true},{"id":24,"type":"text","p":[720.1,18.5],"height":1.8,"text":"Checked","valign":3},{"id":25,"type":"attdef","tag":"CHECKED","p":[720.6,12.5],"height":3.5,"text":"","prompt":"Checked?"},{"id":26,"type":"polyline","pts":[[763.6,10.0],[808.6,10.0],[808.6,20.0],[763.6,20.0]],"closed":true},{"id":27,"type":"text","p":[765.1,18.5],"height":1.8,"text":"Date","valign":3},{"id":28,"type":"attdef","tag":"DATE","p":[765.6,12.5],"height":3.5,"text":"","prompt":"Date?"},{"id":29,"type":"polyline","pts":[[808.6,10.0],[853.6,10.0],[853.6,20.0],[808.6,20.0]],"closed":true},{"id":30,"type":"text","p":[810.1,18.5],"height":1.8,"text":"Scale","valign":3},{"id":31,"type":"attdef","tag":"SCALE","p":[810.6,12.5],"height":3.5,"text":"","prompt":"Scale?"}],"description":"Border and title block for ANSI D across"}
+],
+"entities":[
+{"id":32,"type":"insert","block":"Sheet ANSI D across","p":[0.0,0.0],"sx":0.03937007874015748,"sy":0.03937007874015748,"attribs":[{"tag":"TITLE","p":[26.598425196850393,1.6732283464566928],"height":0.19685039370078738,"text":"","prompt":"Title?"},{"tag":"COMPANY","p":[26.598425196850393,1.279527559055118],"height":0.1377952755905512,"text":"","prompt":"Company?"},{"tag":"PROJECT","p":[30.141732283464567,1.279527559055118],"height":0.1377952755905512,"text":"","prompt":"Project?"},{"tag":"DRAWING_NO","p":[26.598425196850393,0.8858267716535433],"height":0.1377952755905512,"text":"","prompt":"Drawing number?"},{"tag":"REV","p":[30.141732283464567,0.8858267716535433],"height":0.1377952755905512,"text":"","prompt":"Revision?"},{"tag":"SHEET","p":[31.559055118110237,0.8858267716535433],"height":0.1377952755905512,"text":"","prompt":"Sheet?"},{"tag":"DRAWN","p":[26.598425196850393,0.4921259842519685],"height":0.1377952755905512,"text":"","prompt":"Drawn?"},{"tag":"CHECKED","p":[28.37007874015748,0.4921259842519685],"height":0.1377952755905512,"text":"","prompt":"Checked?"},{"tag":"DATE","p":[30.141732283464567,0.4921259842519685],"height":0.1377952755905512,"text":"","prompt":"Date?"},{"tag":"SCALE","p":[31.913385826771655,0.4921259842519685],"height":0.1377952755905512,"text":"1:1","prompt":"Scale?"}],"layer":"Sheet"}
+],
+"extras":{}}
